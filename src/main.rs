@@ -6,9 +6,10 @@ use ratatui::{
     crossterm::event::{self, Event, KeyEvent},
     layout::{Constraint, Layout, Rect},
     style::{Color, Style, Stylize},
-    text::ToSpan,
+    text::{Line, Span, ToSpan},
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph, Widget},
 };
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::time::{Duration, Instant};
@@ -20,12 +21,28 @@ struct AppState {
     list_state: ListState,
     adding: bool,
     input: String,
+    input_display: Line<'static>,
     test_effect: Option<Effect>,
     dt: f64,
 }
 
 impl AppState {
-    pub const SAVE_PATH: &str = "save.dat";
+    pub const SAVE_PATH: &'static str = "save.dat";
+
+    pub fn update_input_display(&mut self) {
+        let regex = Regex::new(r"(tag:\s(\w+))+$").unwrap();
+
+        self.input_display = if regex.is_match(&self.input) {
+            let index = self.input.chars().position(|c| c == 't').unwrap_or(0);
+
+            Line::from(vec![
+                Span::styled(self.input[..index].to_string(), theme::TEXT),
+                Span::styled(self.input[index..].to_string(), theme::ORANG),
+            ])
+        } else {
+            Line::from(vec![Span::raw(self.input.clone())])
+        };
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -108,6 +125,7 @@ fn handle_add(key: KeyEvent, app: &mut AppState) -> bool {
         }
         _ => {}
     }
+    app.update_input_display();
     false
 }
 
@@ -191,7 +209,7 @@ fn compute_main_layout(frame: &Frame, app_state: &AppState) -> (Rect, Rect, Opti
 }
 
 fn render_input_window(area: Rect, app_state: &mut AppState, frame: &mut Frame) {
-    Paragraph::new(app_state.input.as_str())
+    Paragraph::new(app_state.input_display.clone())
         .block(
             Block::bordered()
                 .border_type(BorderType::Rounded)
