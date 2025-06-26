@@ -5,15 +5,16 @@ use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyEvent},
     layout::{Constraint, Layout, Rect},
-    style::{Style, Stylize},
+    style::{Color, Style, Stylize},
     text::ToSpan,
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph, Widget},
 };
-use tachyonfx::{Duration, Effect, Shader, fx::sweep_in};
+use std::time::{Duration, Instant};
+use tachyonfx::{Duration as FxDuration, Effect, Shader, fx::sweep_in};
 
 #[derive(Debug, Default)]
 struct AppState {
-    items: Vec<TodoItem>,
+    items: Vec<Log>,
     list_state: ListState,
     adding: bool,
     input: String,
@@ -21,17 +22,25 @@ struct AppState {
     dt: f64,
 }
 
-#[derive(Debug, Default)]
-struct TodoItem {
+#[derive(Debug)]
+struct Log {
     done: bool,
-    description: String,
+    title: String,
+    display_text: String,
+    bg_color: Color,
+    start: Instant,
+    end: Instant,
 }
 
-impl TodoItem {
-    pub fn new(desc: String) -> Self {
+impl Log {
+    pub fn new(desc: String, even: bool) -> Self {
         Self {
+            display_text: desc.clone(),
+            start: Instant::now(),
+            end: Instant::now(),
+            bg_color: if even { theme::BG0 } else { theme::BG1 },
             done: false,
-            description: desc,
+            title: desc,
         }
     }
 }
@@ -43,7 +52,7 @@ fn main() -> Result<()> {
         16,
         0,
         theme::BG0,
-        Duration::from_millis(500),
+        FxDuration::from_millis(500),
     ));
     color_eyre::install()?;
 
@@ -63,7 +72,8 @@ fn delete_entry(app: &mut AppState) {
 fn handle_add(key: KeyEvent, app: &mut AppState) -> bool {
     match key.code {
         event::KeyCode::Enter => {
-            app.items.push(TodoItem::new(app.input.clone()));
+            app.items
+                .push(Log::new(app.input.clone(), app.items.len() % 2 == 0));
             app.input.clear();
             return true;
         }
@@ -111,13 +121,14 @@ fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
     let mut last_frame = std::time::Instant::now();
 
     loop {
-        let now = std::time::Instant::now();
+        let now = Instant::now();
         app_state.dt = now.duration_since(last_frame).as_secs_f64();
         last_frame = now;
 
+        update_logs(&mut app_state.items);
         terminal.draw(|x| render(x, app_state))?;
 
-        if event::poll(std::time::Duration::from_millis(32))? {
+        if event::poll(Duration::from_millis(32))? {
             if let Event::Key(key) = event::read()? {
                 if app_state.adding {
                     if handle_add(key, app_state) {
@@ -169,10 +180,27 @@ fn render_input_window(area: Rect, app_state: &mut AppState, frame: &mut Frame) 
         .render(area, frame.buffer_mut());
 
     app_state.test_effect.as_mut().unwrap().process(
-        Duration::from_millis((app_state.dt * 1000.0) as u32),
+        FxDuration::from_millis((app_state.dt * 1000.0) as u32),
         frame.buffer_mut(),
         area,
     );
+}
+
+fn duration_as_hhmmss(dur: Duration) -> String {
+    let total_seconds = dur.as_secs();
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let seconds = total_seconds % 60;
+
+    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+}
+
+fn update_logs(logs: &mut [Log]) {
+    for log in logs.iter_mut().filter(|l| !l.done) {
+        log.end = Instant::now();
+        let dur = log.end.duration_since(log.start);
+        log.display_text = format!("{} {}", log.title, duration_as_hhmmss(dur));
+    }
 }
 
 fn render_main_screen(frame: &mut Frame, app_state: &mut AppState) -> Option<Rect> {
@@ -191,15 +219,13 @@ fn render_main_screen(frame: &mut Frame, app_state: &mut AppState) -> Option<Rec
         .bg(theme::BG0)
         .title("Todos".to_span().into_centered_line());
 
-    // outer_block.render(todo_area, frame.buffer_mut());
-
     let list = List::new(app_state.items.iter().map(|e| {
         let v = if e.done {
-            e.description.to_span().crossed_out()
+            e.display_text.to_span().crossed_out()
         } else {
-            e.description.to_span()
+            e.display_text.to_span()
         };
-        ListItem::from(v)
+        ListItem::from(v).bg(e.bg_color)
     }))
     .block(outer_block)
     .fg(theme::TEXT)
@@ -208,7 +234,6 @@ fn render_main_screen(frame: &mut Frame, app_state: &mut AppState) -> Option<Rec
     .highlight_symbol(">");
 
     frame.render_stateful_widget(list, todo_area, &mut app_state.list_state);
-
     input_area
 }
 
