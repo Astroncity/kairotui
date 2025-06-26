@@ -9,6 +9,8 @@ use ratatui::{
     text::ToSpan,
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph, Widget},
 };
+use serde::{Deserialize, Serialize};
+use std::fs;
 use std::time::{Duration, Instant};
 use tachyonfx::{Duration as FxDuration, Effect, Shader, fx::sweep_in};
 
@@ -22,27 +24,44 @@ struct AppState {
     dt: f64,
 }
 
-#[derive(Debug)]
+impl AppState {
+    pub const SAVE_PATH: &str = "save.dat";
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct Log {
     done: bool,
     title: String,
     display_text: String,
-    bg_color: Color,
+    #[serde(with = "serde_millis")]
     start: Instant,
+    #[serde(with = "serde_millis")]
     end: Instant,
 }
 
 impl Log {
-    pub fn new(desc: String, even: bool) -> Self {
+    pub fn new(desc: String) -> Self {
         Self {
             display_text: desc.clone(),
             start: Instant::now(),
             end: Instant::now(),
-            bg_color: if even { theme::BG0 } else { theme::BG1 },
             done: false,
             title: desc,
         }
     }
+}
+
+fn save_logs(app_state: &AppState, filename: &str) -> Result<()> {
+    let data = serde_json::to_string(&app_state.items).unwrap();
+    fs::write(filename, data)?;
+    Ok(())
+}
+
+fn load(filename: &str) -> Result<Vec<Log>> {
+    let str: String = fs::read_to_string(filename)?;
+    let vec: Vec<Log> = serde_json::from_str(&str)?;
+
+    Ok(vec)
 }
 
 fn main() -> Result<()> {
@@ -55,6 +74,10 @@ fn main() -> Result<()> {
         FxDuration::from_millis(500),
     ));
     color_eyre::install()?;
+
+    if fs::exists(AppState::SAVE_PATH)? {
+        state.items = load(AppState::SAVE_PATH).unwrap();
+    }
 
     let terminal = ratatui::init();
     let result = run(terminal, &mut state);
@@ -72,8 +95,7 @@ fn delete_entry(app: &mut AppState) {
 fn handle_add(key: KeyEvent, app: &mut AppState) -> bool {
     match key.code {
         event::KeyCode::Enter => {
-            app.items
-                .push(Log::new(app.input.clone(), app.items.len() % 2 == 0));
+            app.items.push(Log::new(app.input.clone()));
             app.input.clear();
             return true;
         }
@@ -129,6 +151,7 @@ fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
         terminal.draw(|x| render(x, app_state))?;
 
         if event::poll(Duration::from_millis(32))? {
+            let _ = save_logs(app_state, AppState::SAVE_PATH);
             if let Event::Key(key) = event::read()? {
                 if app_state.adding {
                     if handle_add(key, app_state) {
@@ -219,13 +242,14 @@ fn render_main_screen(frame: &mut Frame, app_state: &mut AppState) -> Option<Rec
         .bg(theme::BG0)
         .title("Todos".to_span().into_centered_line());
 
-    let list = List::new(app_state.items.iter().map(|e| {
+    let list = List::new(app_state.items.iter().enumerate().map(|(i, e)| {
         let v = if e.done {
             e.display_text.to_span().crossed_out()
         } else {
             e.display_text.to_span()
         };
-        ListItem::from(v).bg(e.bg_color)
+        let color = if i % 2 == 0 { theme::BG0 } else { theme::BG1 };
+        ListItem::from(v).bg(color)
     }))
     .block(outer_block)
     .fg(theme::TEXT)
