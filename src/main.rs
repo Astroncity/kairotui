@@ -1,11 +1,14 @@
+mod animation;
 mod theme;
+
+use animation::AnimationHandler;
 
 use color_eyre::eyre::{Ok, Result};
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyEvent},
     layout::{Constraint, Layout, Rect},
-    style::{Color, Style, Stylize},
+    style::{Style, Stylize},
     text::{Line, Span, ToSpan},
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph, Widget},
 };
@@ -13,7 +16,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::time::{Duration, Instant};
-use tachyonfx::{Duration as FxDuration, Effect, Shader, fx::sweep_in};
+use tachyonfx::{Duration as FxDuration, fx::sweep_in};
 
 #[derive(Debug, Default)]
 struct AppState {
@@ -22,7 +25,8 @@ struct AppState {
     adding: bool,
     input: String,
     input_display: Line<'static>,
-    test_effect: Option<Effect>,
+    animation_handler: AnimationHandler,
+    input_open_anim_idx: usize,
     dt: f64,
 }
 
@@ -83,13 +87,17 @@ fn load(filename: &str) -> Result<Vec<Log>> {
 
 fn main() -> Result<()> {
     let mut state = AppState::default();
-    state.test_effect = Some(sweep_in(
-        tachyonfx::Motion::LeftToRight,
-        16,
-        0,
-        theme::BG0,
-        FxDuration::from_millis(500),
-    ));
+    state.input_open_anim_idx = state.animation_handler.add(
+        sweep_in(
+            tachyonfx::Motion::LeftToRight,
+            16,
+            0,
+            theme::BG0,
+            FxDuration::from_millis(500),
+        ),
+        Rect::default(),
+    );
+
     color_eyre::install()?;
 
     if fs::exists(AppState::SAVE_PATH)? {
@@ -114,6 +122,7 @@ fn handle_add(key: KeyEvent, app: &mut AppState) -> bool {
         event::KeyCode::Enter => {
             app.items.push(Log::new(app.input.clone()));
             app.input.clear();
+            app.update_input_display();
             return true;
         }
         event::KeyCode::Esc => return true,
@@ -182,13 +191,18 @@ fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
         update_logs(&mut app_state.items);
         terminal.draw(|x| render(x, app_state))?;
 
-        if event::poll(Duration::from_millis(32))? {
+        let timeout = if app_state.animation_handler.running() {
+            Duration::from_millis(32)
+        } else {
+            Duration::from_millis(500)
+        };
+
+        if event::poll(timeout)? {
             if handle_event(app_state) {
                 break;
             }
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
-
-        std::thread::sleep(std::time::Duration::from_millis(1));
     }
 
     Ok(())
@@ -226,12 +240,6 @@ fn render_input_window(area: Rect, app_state: &mut AppState, frame: &mut Frame) 
         )
         .fg(theme::TEXT)
         .render(area, frame.buffer_mut());
-
-    app_state.test_effect.as_mut().unwrap().process(
-        FxDuration::from_millis((app_state.dt * 1000.0) as u32),
-        frame.buffer_mut(),
-        area,
-    );
 }
 
 fn duration_as_hhmmss(dur: Duration) -> String {
@@ -291,8 +299,21 @@ fn render(frame: &mut Frame, app_state: &mut AppState) {
 
     if app_state.adding {
         assert!(input_area.is_some(), "input area not ready");
-        render_input_window(input_area.unwrap(), app_state, frame);
+        let area = input_area.unwrap();
+        render_input_window(area, app_state, frame);
+        app_state
+            .animation_handler
+            .set_progress(true, app_state.input_open_anim_idx, area);
     } else {
-        app_state.test_effect.as_mut().unwrap().reset();
+        app_state
+            .animation_handler
+            .reset_anim(app_state.input_open_anim_idx);
+        app_state.animation_handler.set_progress(
+            false,
+            app_state.input_open_anim_idx,
+            Rect::default(),
+        );
     }
+
+    app_state.animation_handler.progress(frame, app_state.dt);
 }
