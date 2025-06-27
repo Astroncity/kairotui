@@ -157,6 +157,20 @@ fn handle_key(key: KeyEvent, app: &mut AppState) -> bool {
     false
 }
 
+fn handle_event(app_state: &mut AppState) -> bool {
+    let _ = save_logs(app_state, AppState::SAVE_PATH);
+    if let Event::Key(key) = event::read().unwrap() {
+        if app_state.adding {
+            if handle_add(key, app_state) {
+                app_state.adding = false;
+            }
+        } else {
+            return handle_key(key, app_state);
+        }
+    }
+    false
+}
+
 fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
     let mut last_frame = std::time::Instant::now();
 
@@ -169,15 +183,8 @@ fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
         terminal.draw(|x| render(x, app_state))?;
 
         if event::poll(Duration::from_millis(32))? {
-            let _ = save_logs(app_state, AppState::SAVE_PATH);
-            if let Event::Key(key) = event::read()? {
-                if app_state.adding {
-                    if handle_add(key, app_state) {
-                        app_state.adding = false;
-                    }
-                } else if handle_key(key, app_state) {
-                    break;
-                }
+            if handle_event(app_state) {
+                break;
             }
         }
 
