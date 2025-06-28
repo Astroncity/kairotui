@@ -1,4 +1,5 @@
 mod animation;
+mod tag;
 mod theme;
 
 use animation::AnimationHandler;
@@ -18,21 +19,40 @@ use std::fs;
 use std::time::{Duration, Instant};
 use tachyonfx::{Duration as FxDuration, fx::sweep_in};
 
-#[derive(Debug, Default)]
-struct AppState {
+#[derive(Default, Debug, Serialize, Deserialize)]
+struct PersistentData {
     items: Vec<Log>,
-    list_state: ListState,
+}
+
+impl PersistentData {
+    pub const SAVE_PATH: &'static str = "/tmp/save.dat";
+
+    fn save(self: &Self, filename: &str) -> Result<()> {
+        let data = serde_json::to_string(self).unwrap();
+        fs::write(filename, data)?;
+        Ok(())
+    }
+
+    fn load(filename: &str) -> Result<PersistentData> {
+        let str: String = fs::read_to_string(filename)?;
+        let dat: PersistentData = serde_json::from_str(&str)?;
+        Ok(dat)
+    }
+}
+
+#[derive(Debug, Default)]
+struct State {
+    data: PersistentData,
+    list: ListState,
     adding: bool,
     input: String,
     input_display: Line<'static>,
-    animation_handler: AnimationHandler,
-    input_open_anim_idx: usize,
+    anims: AnimationHandler,
+    input_anim: usize,
     dt: f64,
 }
 
-impl AppState {
-    pub const SAVE_PATH: &'static str = "save.dat";
-
+impl State {
     pub fn update_input_display(&mut self) {
         let regex = Regex::new(r"(tag:\s(\w+))+$").unwrap();
 
@@ -52,42 +72,31 @@ impl AppState {
 #[derive(Debug, Serialize, Deserialize)]
 struct Log {
     done: bool,
-    title: String,
-    display_text: String,
+    name: String,
+    text: String,
     #[serde(with = "serde_millis")]
     start: Instant,
     #[serde(with = "serde_millis")]
     end: Instant,
+    tags: Vec<String>,
 }
 
 impl Log {
-    pub fn new(desc: String) -> Self {
+    pub fn new(desc: String, tags: Vec<String>) -> Self {
         Self {
-            display_text: desc.clone(),
+            text: desc.clone(),
             start: Instant::now(),
             end: Instant::now(),
             done: false,
-            title: desc,
+            name: desc,
+            tags: tags,
         }
     }
 }
 
-fn save_logs(app_state: &AppState, filename: &str) -> Result<()> {
-    let data = serde_json::to_string(&app_state.items).unwrap();
-    fs::write(filename, data)?;
-    Ok(())
-}
-
-fn load(filename: &str) -> Result<Vec<Log>> {
-    let str: String = fs::read_to_string(filename)?;
-    let vec: Vec<Log> = serde_json::from_str(&str)?;
-
-    Ok(vec)
-}
-
 fn main() -> Result<()> {
-    let mut state = AppState::default();
-    state.input_open_anim_idx = state.animation_handler.add(
+    let mut state = State::default();
+    state.input_anim = state.anims.add(
         sweep_in(
             tachyonfx::Motion::LeftToRight,
             16,
@@ -100,8 +109,8 @@ fn main() -> Result<()> {
 
     color_eyre::install()?;
 
-    if fs::exists(AppState::SAVE_PATH)? {
-        state.items = load(AppState::SAVE_PATH).unwrap();
+    if fs::exists(PersistentData::SAVE_PATH)? {
+        state.data = PersistentData::load(PersistentData::SAVE_PATH).unwrap();
     }
 
     let terminal = ratatui::init();
@@ -111,16 +120,35 @@ fn main() -> Result<()> {
     result
 }
 
-fn delete_entry(app: &mut AppState) {
-    if let Some(i) = app.list_state.selected() {
-        app.items.remove(i);
+fn delete_entry(app: &mut State) {
+    if let Some(i) = app.list.selected() {
+        app.data.items.remove(i);
     }
 }
 
-fn handle_add(key: KeyEvent, app: &mut AppState) -> bool {
+fn parse_input(state: &mut State) -> (String, Vec<String>) {
+    let regex = Regex::new(r"(tag:\s(\w+))+$").unwrap();
+    let matches: Vec<&str> = regex.find_iter(&state.input).map(|m| m.as_str()).collect();
+    let mut log_name = state.input.clone();
+
+    for m in &matches {
+        log_name = log_name.replace(m, "");
+    }
+
+    (
+        log_name.trim().to_owned(),
+        matches
+            .iter()
+            .map(|m| m.to_string().replace("tag: ", ""))
+            .collect(),
+    )
+}
+
+fn handle_add(key: KeyEvent, app: &mut State) -> bool {
     match key.code {
         event::KeyCode::Enter => {
-            app.items.push(Log::new(app.input.clone()));
+            let (name, tags) = parse_input(app);
+            app.data.items.push(Log::new(name, tags));
             app.input.clear();
             app.update_input_display();
             return true;
@@ -138,7 +166,7 @@ fn handle_add(key: KeyEvent, app: &mut AppState) -> bool {
     false
 }
 
-fn handle_key(key: KeyEvent, app: &mut AppState) -> bool {
+fn handle_key(key: KeyEvent, app: &mut State) -> bool {
     match key.code {
         event::KeyCode::Char(char) => match char {
             'q' => return true,
@@ -149,16 +177,16 @@ fn handle_key(key: KeyEvent, app: &mut AppState) -> bool {
                 delete_entry(app);
             }
             'n' => {
-                app.list_state.select_next();
+                app.list.select_next();
             }
             'm' => {
-                app.list_state.select_previous();
+                app.list.select_previous();
             }
             _ => {}
         },
         event::KeyCode::Enter => {
-            if let Some(i) = app.list_state.selected() {
-                app.items[i].done = !app.items[i].done;
+            if let Some(i) = app.list.selected() {
+                app.data.items[i].done = !app.data.items[i].done;
             }
         }
         _ => {}
@@ -166,39 +194,39 @@ fn handle_key(key: KeyEvent, app: &mut AppState) -> bool {
     false
 }
 
-fn handle_event(app_state: &mut AppState) -> bool {
-    let _ = save_logs(app_state, AppState::SAVE_PATH);
+fn handle_event(state: &mut State) -> bool {
+    let _ = state.data.save(PersistentData::SAVE_PATH);
     if let Event::Key(key) = event::read().unwrap() {
-        if app_state.adding {
-            if handle_add(key, app_state) {
-                app_state.adding = false;
+        if state.adding {
+            if handle_add(key, state) {
+                state.adding = false;
             }
         } else {
-            return handle_key(key, app_state);
+            return handle_key(key, state);
         }
     }
     false
 }
 
-fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
+fn run(mut terminal: DefaultTerminal, state: &mut State) -> Result<()> {
     let mut last_frame = std::time::Instant::now();
 
     loop {
         let now = Instant::now();
-        app_state.dt = now.duration_since(last_frame).as_secs_f64();
+        state.dt = now.duration_since(last_frame).as_secs_f64();
         last_frame = now;
 
-        update_logs(&mut app_state.items);
-        terminal.draw(|x| render(x, app_state))?;
+        update_logs(&mut state.data.items);
+        terminal.draw(|x| render(x, state))?;
 
-        let timeout = if app_state.animation_handler.running() {
+        let timeout = if state.anims.running() {
             Duration::from_millis(32)
         } else {
             Duration::from_millis(500)
         };
 
         if event::poll(timeout)? {
-            if handle_event(app_state) {
+            if handle_event(state) {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(1));
@@ -208,7 +236,7 @@ fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
     Ok(())
 }
 
-fn compute_main_layout(frame: &Frame, app_state: &AppState) -> (Rect, Rect, Option<Rect>) {
+fn compute_main_layout(frame: &Frame, state: &State) -> (Rect, Rect, Option<Rect>) {
     let [tabs_and_main] = Layout::vertical([Constraint::Fill(1)])
         .margin(1)
         .areas(frame.area());
@@ -219,7 +247,7 @@ fn compute_main_layout(frame: &Frame, app_state: &AppState) -> (Rect, Rect, Opti
     ])
     .areas(tabs_and_main);
 
-    if app_state.adding {
+    if state.adding {
         let [todo_area, input_area] =
             Layout::vertical([Constraint::Min(5), Constraint::Length(3)]).areas(main_area);
         (tab_area, todo_area, Some(input_area))
@@ -229,8 +257,8 @@ fn compute_main_layout(frame: &Frame, app_state: &AppState) -> (Rect, Rect, Opti
     }
 }
 
-fn render_input_window(area: Rect, app_state: &mut AppState, frame: &mut Frame) {
-    Paragraph::new(app_state.input_display.clone())
+fn render_input_window(area: Rect, state: &mut State, frame: &mut Frame) {
+    Paragraph::new(state.input_display.clone())
         .block(
             Block::bordered()
                 .border_type(BorderType::Rounded)
@@ -255,12 +283,16 @@ fn update_logs(logs: &mut [Log]) {
     for log in logs.iter_mut().filter(|l| !l.done) {
         log.end = Instant::now();
         let dur = log.end.duration_since(log.start);
-        log.display_text = format!("{} {}", log.title, duration_as_hhmmss(dur));
+        log.text = format!("{} {}", log.name, duration_as_hhmmss(dur));
+
+        for t in &log.tags {
+            log.text.push_str(t);
+        }
     }
 }
 
-fn render_main_screen(frame: &mut Frame, app_state: &mut AppState) -> Option<Rect> {
-    let (tab_area, todo_area, input_area) = compute_main_layout(frame, app_state);
+fn render_main_screen(frame: &mut Frame, state: &mut State) -> Option<Rect> {
+    let (tab_area, todo_area, input_area) = compute_main_layout(frame, state);
 
     Block::bordered()
         .border_type(BorderType::Rounded)
@@ -275,11 +307,11 @@ fn render_main_screen(frame: &mut Frame, app_state: &mut AppState) -> Option<Rec
         .bg(theme::BG0)
         .title("Todos".to_span().into_centered_line());
 
-    let list = List::new(app_state.items.iter().enumerate().map(|(i, e)| {
+    let list = List::new(state.data.items.iter().enumerate().map(|(i, e)| {
         let v = if e.done {
-            e.display_text.to_span().crossed_out()
+            e.text.to_span().crossed_out()
         } else {
-            e.display_text.to_span()
+            e.text.to_span()
         };
         let color = if i % 2 == 0 { theme::BG0 } else { theme::BG1 };
         ListItem::from(v).bg(color)
@@ -290,30 +322,24 @@ fn render_main_screen(frame: &mut Frame, app_state: &mut AppState) -> Option<Rec
     .highlight_style(Style::default().fg(theme::ORANG))
     .highlight_symbol(">");
 
-    frame.render_stateful_widget(list, todo_area, &mut app_state.list_state);
+    frame.render_stateful_widget(list, todo_area, &mut state.list);
     input_area
 }
 
-fn render(frame: &mut Frame, app_state: &mut AppState) {
-    let input_area = render_main_screen(frame, app_state);
+fn render(frame: &mut Frame, state: &mut State) {
+    let input_area = render_main_screen(frame, state);
 
-    if app_state.adding {
+    if state.adding {
         assert!(input_area.is_some(), "input area not ready");
         let area = input_area.unwrap();
-        render_input_window(area, app_state, frame);
-        app_state
-            .animation_handler
-            .set_progress(true, app_state.input_open_anim_idx, area);
+        render_input_window(area, state, frame);
+        state.anims.set_progress(true, state.input_anim, area);
     } else {
-        app_state
-            .animation_handler
-            .reset_anim(app_state.input_open_anim_idx);
-        app_state.animation_handler.set_progress(
-            false,
-            app_state.input_open_anim_idx,
-            Rect::default(),
-        );
+        state.anims.reset_anim(state.input_anim);
+        state
+            .anims
+            .set_progress(false, state.input_anim, Rect::default());
     }
 
-    app_state.animation_handler.progress(frame, app_state.dt);
+    state.anims.progress(frame, state.dt);
 }
