@@ -4,12 +4,13 @@ mod theme;
 
 use animation::AnimationHandler;
 
+use crate::tag::TagSys;
 use color_eyre::eyre::{Ok, Result};
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyEvent},
     layout::{Constraint, Layout, Rect},
-    style::{Style, Stylize},
+    style::{Color, Style, Stylize},
     text::{Line, Span, ToSpan},
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph, Widget},
 };
@@ -22,6 +23,7 @@ use tachyonfx::{Duration as FxDuration, fx::sweep_in};
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct PersistentData {
     items: Vec<Log>,
+    tags: TagSys,
 }
 
 impl PersistentData {
@@ -148,6 +150,7 @@ fn handle_add(key: KeyEvent, app: &mut State) -> bool {
     match key.code {
         event::KeyCode::Enter => {
             let (name, tags) = parse_input(app);
+            tags.iter().for_each(|t| app.data.tags.add(t));
             app.data.items.push(Log::new(name, tags));
             app.input.clear();
             app.update_input_display();
@@ -279,16 +282,23 @@ fn duration_as_hhmmss(dur: Duration) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
+// TODO: Optimize
 fn update_logs(logs: &mut [Log]) {
     for log in logs.iter_mut().filter(|l| !l.done) {
         log.end = Instant::now();
         let dur = log.end.duration_since(log.start);
         log.text = format!("{} {}", log.name, duration_as_hhmmss(dur));
-
-        for t in &log.tags {
-            log.text.push_str(t);
-        }
     }
+}
+
+fn get_log_tag_text<'a>(log: &'a Log, tag_sys: &'a TagSys) -> Vec<Span<'a>> {
+    let mut spans: Vec<Span> = Vec::new();
+    for t in &log.tags {
+        let str = String::from(" ") + t;
+        let color = Color::from_u32(tag_sys.map()[t].color());
+        spans.push(Span::styled(str, color));
+    }
+    spans
 }
 
 fn render_main_screen(frame: &mut Frame, state: &mut State) -> Option<Rect> {
@@ -307,14 +317,16 @@ fn render_main_screen(frame: &mut Frame, state: &mut State) -> Option<Rect> {
         .bg(theme::BG0)
         .title("Todos".to_span().into_centered_line());
 
-    let list = List::new(state.data.items.iter().enumerate().map(|(i, e)| {
-        let v = if e.done {
-            e.text.to_span().crossed_out()
+    let list = List::new(state.data.items.iter().enumerate().map(|(i, l)| {
+        let v = if l.done {
+            l.text.to_span().crossed_out()
         } else {
-            e.text.to_span()
+            l.text.to_span()
         };
+        let tag_txt = get_log_tag_text(l, &state.data.tags);
+        let ln = Line::from([&vec![v][..], &tag_txt[..]].concat());
         let color = if i % 2 == 0 { theme::BG0 } else { theme::BG1 };
-        ListItem::from(v).bg(color)
+        ListItem::from(ln).bg(color)
     }))
     .block(outer_block)
     .fg(theme::TEXT)
