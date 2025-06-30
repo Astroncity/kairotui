@@ -178,10 +178,10 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
                     log::delete_selected(state);
                 }
             }
-            'n' => {
+            'n' | 'j' => {
                 state.list_state.select_next();
             }
-            'm' => {
+            'm' | 'k' => {
                 state.list_state.select_previous();
             }
             _ => {}
