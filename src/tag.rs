@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::State;
-use crate::theme;
+use crate::{State, theme, unicode_icon};
+
 use ratatui::{
     Frame,
     layout::Rect,
@@ -50,11 +50,8 @@ impl TagSys {
 pub fn render_tag_list(state: &mut State, outer_block: &Block, area: &Rect, frame: &mut Frame) {
     let list = List::new(state.data.tags.map().values().enumerate().map(|(i, l)| {
         let name = l.name();
-        let mut text = String::from("");
-        text.push(char::from_u32(0xf1224).unwrap());
-        text.push_str(" ");
-
-        let ln = Line::from(vec![Span::styled(text, Color::from_u32(*l.color())), Span::raw(name)]);
+        let icon = unicode_icon(0xf1224, Color::from_u32(*l.color()));
+        let ln = Line::from(vec![icon, Span::raw(name)]);
 
         let color = if i % 2 == 0 { theme::BG0 } else { theme::BG1 };
         ListItem::from(ln).bg(color)

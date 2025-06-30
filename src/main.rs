@@ -67,11 +67,19 @@ enum ListType {
     TAG,
 }
 
-impl std::fmt::Display for ListType {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl ListType {
+    fn to_span(&self) -> Line {
         match self {
-            ListType::LOG => write!(f, "Log"),
-            ListType::TAG => write!(f, "Tag"),
+            ListType::LOG => {
+                let icon = unicode_icon(0xf02c, Color::Blue);
+                let name = Span::raw("Logs");
+                Line::from(vec![icon, name])
+            }
+            ListType::TAG => {
+                let icon = unicode_icon(0xf02c, Color::Magenta);
+                let name = Span::raw("Tags");
+                Line::from(vec![icon, name])
+            }
         }
     }
 }
@@ -133,6 +141,12 @@ fn main() -> Result<()> {
     ratatui::restore();
     result?;
     Ok(())
+}
+
+fn unicode_icon<'a>(icon: u32, color: Color) -> Span<'a> {
+    let mut c = String::from(char::from_u32(icon).unwrap_or('X'));
+    c.push(' ');
+    Span::styled(c, color)
 }
 
 fn init() -> Result<State> {
@@ -328,9 +342,9 @@ fn render_tab_list(area: &Rect, state: &State, frame: &mut Frame) {
         .bg(theme::BG0)
         .title(" Tabs ".to_span().into_centered_line());
 
-    let tab_str = ListType::TYPES.iter().map(|t| t.to_string());
+    let tab_lines = ListType::TYPES.iter().map(|t| t.to_span());
 
-    let tab_list = List::new(tab_str.map(|s| ListItem::from(Span::raw(s))))
+    let tab_list = List::new(tab_lines)
         .block(tab_block)
         .fg(theme::TEXT)
         .bg(theme::BG0)
