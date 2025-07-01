@@ -20,9 +20,35 @@ use ratatui::{
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
 use std::{cell::RefCell, fs};
-use tachyonfx::{Duration as FxDuration, fx::sweep_in};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
+use tachyonfx::{
+    Duration as FxDuration, Effect, Shader,
+    fx::{self, sweep_in},
+};
+use tracing::{Level, event as trace_event, info};
+use tracing_appender;
+use tracing_subscriber::FmtSubscriber;
+
+macro_rules! add_anim_if_missing {
+    ($state:expr, $key:expr, $effect:expr, $area:expr, $trigger:expr) => {
+        if !$state.anims.borrow().animations.contains_key($key) {
+            $state
+                .anims
+                .borrow_mut()
+                .add($key, $effect, $area, Some(Box::new($trigger)));
+        }
+    };
+}
+
+macro_rules! after_anim {
+    ($anim_handler:expr, $anim:expr) => {
+        $anim_handler.animations.get($anim).unwrap().effect.done()
+    };
+}
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct PersistentData {
@@ -100,7 +126,6 @@ struct State {
     input_display: Line<'static>,
     main_panel_title: &'static str,
     anims: RefCell<AnimationHandler>,
-    input_anim: usize,
     focused_list: usize,
     dt: f64,
 }
@@ -127,18 +152,16 @@ impl State {
 }
 
 fn main() -> Result<()> {
+    let file_appender = tracing_appender::rolling::daily("/home/astro/projects/kairotui/", "kairotui.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::TRACE)
+        .with_writer(non_blocking)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+
     let mut state = init()?;
-    state.input_anim = state.anims.borrow_mut().add(
-        sweep_in(
-            tachyonfx::Motion::LeftToRight,
-            16,
-            0,
-            theme::BG0,
-            FxDuration::from_millis(500),
-        ),
-        Rect::default(),
-        Some(Box::new(|x| x.adding_log)),
-    );
 
     let terminal = ratatui::init();
     let result = run(terminal, &mut state);
@@ -162,8 +185,9 @@ fn init() -> Result<State> {
         input: String::from(""),
         input_display: Line::default(),
         main_panel_title: "",
-        anims: RefCell::new(AnimationHandler { animations: vec![] }),
-        input_anim: 0,
+        anims: RefCell::new(AnimationHandler {
+            animations: HashMap::new(),
+        }),
         focused_list: 0,
         dt: 0.0,
     };
@@ -274,22 +298,55 @@ fn run(mut terminal: DefaultTerminal, state: &mut State) -> Result<()> {
     Ok(())
 }
 
-fn compute_main_layout(frame: &Frame, state: &State) -> (Rect, Rect, Option<Rect>) {
+fn handle_main_layout_anims(areas: &[Rect; 2], state: &mut State) {
+    add_anim_if_missing!(
+        state,
+        "main_area",
+        fx::coalesce(FxDuration::from_millis(500)),
+        areas[0],
+        |_, _| true
+    );
+    add_anim_if_missing!(
+        state,
+        "tab_area",
+        fx::coalesce(FxDuration::from_millis(500)),
+        areas[1],
+        |_, a| after_anim!(a, "main_area")
+    );
+}
+
+fn compute_main_layout(frame: &Frame, state: &mut State) -> (Rect, Rect, Option<Rect>) {
     let [tabs_and_main] = Layout::vertical([Constraint::Fill(1)]).margin(1).areas(frame.area());
 
     let [tab_area, main_area] = Layout::horizontal([Constraint::Length(20), Constraint::Min(10)]).areas(tabs_and_main);
 
     if state.adding_log {
-        let [todo_area, input_area] = Layout::vertical([Constraint::Min(5), Constraint::Length(3)]).areas(main_area);
-        (tab_area, todo_area, Some(input_area))
+        let [log_area, input_area] = Layout::vertical([Constraint::Min(5), Constraint::Length(3)]).areas(main_area);
+        handle_main_layout_anims(&[log_area, tab_area], state);
+        (tab_area, log_area, Some(input_area))
     } else {
         let [todo_area] = Layout::vertical([Constraint::Fill(1)]).areas(main_area);
+        handle_main_layout_anims(&[todo_area, tab_area], state);
         (tab_area, todo_area, None)
     }
 }
 
 fn render_input_window(area: Rect, state: &mut State, frame: &mut Frame) {
-    state.anims.borrow_mut().animations[state.input_anim].area = area;
+    if !state.anims.borrow().animations.contains_key("input") {
+        state.anims.borrow_mut().add(
+            "input",
+            sweep_in(
+                tachyonfx::Motion::LeftToRight,
+                16,
+                0,
+                theme::BG0,
+                FxDuration::from_millis(500),
+            ),
+            area,
+            Some(Box::new(|x, _| x.adding_log)),
+        );
+    }
+
     Paragraph::new(state.input_display.clone())
         .block(
             Block::bordered()
@@ -398,9 +455,9 @@ fn render(frame: &mut Frame, state: &mut State) {
         assert!(input_area.is_some(), "input area not ready");
         let area = input_area.unwrap();
         render_input_window(area, state, frame);
-    } else {
-        state.anims.borrow_mut().reset_anim(state.input_anim);
     }
 
+    let msg = format!("state.adding_log: {}", state.adding_log);
+    trace_event!(Level::INFO, msg);
     state.anims.borrow_mut().progress(frame, state.dt, state);
 }
