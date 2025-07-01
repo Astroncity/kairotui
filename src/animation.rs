@@ -1,41 +1,29 @@
-use crate::theme;
+use crate::State;
 use ratatui::{Frame, layout::Rect};
-use tachyonfx::{Duration as FxDuration, Effect, Motion, Shader, fx::sweep_in};
+use tachyonfx::{Duration as FxDuration, Effect, Shader};
+use tracing::{Level, event};
 
-#[derive(Debug)]
+#[derive()]
 pub struct Animation {
     effect: Effect,
-    area: Rect,
+    pub area: Rect,
     should_progress: bool,
+    trigger: Option<Box<dyn Fn(&State) -> bool>>,
+    last_trigger: bool,
 }
 
-#[derive(Debug, Default)]
 pub struct AnimationHandler {
-    animations: Vec<Box<Animation>>,
-}
-
-impl Default for Animation {
-    fn default() -> Self {
-        Self {
-            effect: sweep_in(
-                Motion::LeftToRight,
-                16,
-                0,
-                theme::BG0,
-                FxDuration::default(),
-            ),
-            area: Rect::default(),
-            should_progress: false,
-        }
-    }
+    pub animations: Vec<Box<Animation>>,
 }
 
 impl AnimationHandler {
-    pub fn add(self: &mut Self, effect: Effect, area: Rect) -> usize {
+    pub fn add(self: &mut Self, effect: Effect, area: Rect, trigger: Option<Box<dyn Fn(&State) -> bool>>) -> usize {
         self.animations.push(Box::new(Animation {
             effect: effect,
             area,
             should_progress: false,
+            trigger: trigger,
+            last_trigger: false,
         }));
 
         self.animations.len() - 1
@@ -45,8 +33,20 @@ impl AnimationHandler {
         self.animations.iter().any(|a| a.should_progress)
     }
 
-    pub fn progress(self: &mut Self, frame: &mut Frame, dt: f64) {
+    pub fn progress(self: &mut Self, frame: &mut Frame, dt: f64, state: &State) {
+        event!(Level::INFO, "inside my_function!");
         self.animations.iter_mut().for_each(|a| {
+            if let Some(t) = &a.trigger {
+                let b = t(state);
+                if b {
+                    if !a.last_trigger {
+                        a.effect.reset();
+                    }
+                    a.should_progress = true;
+                }
+                a.last_trigger = b;
+            }
+
             if a.should_progress {
                 a.effect.process(
                     FxDuration::from_millis((dt * 1000.0) as u32),
@@ -55,12 +55,6 @@ impl AnimationHandler {
                 );
             }
         });
-    }
-
-    pub fn set_progress(self: &mut Self, flag: bool, idx: usize, area: Rect) {
-        assert!(idx < self.animations.len());
-        self.animations[idx].should_progress = flag;
-        self.animations[idx].area = area;
     }
 
     pub fn reset_anim(self: &mut Self, idx: usize) {

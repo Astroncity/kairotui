@@ -20,8 +20,8 @@ use ratatui::{
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::time::{Duration, Instant};
+use std::{cell::RefCell, fs};
 use tachyonfx::{Duration as FxDuration, fx::sweep_in};
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -68,6 +68,8 @@ enum ListType {
 }
 
 impl ListType {
+    pub const TYPES: [ListType; 2] = [ListType::LOG, ListType::TAG];
+
     fn to_span(&self) -> Line {
         match self {
             ListType::LOG => {
@@ -82,20 +84,22 @@ impl ListType {
             }
         }
     }
+    fn to_str(&self) -> &'static str {
+        match self {
+            ListType::LOG => " Logs ",
+            ListType::TAG => " Tags ",
+        }
+    }
 }
 
-impl ListType {
-    pub const TYPES: [ListType; 2] = [ListType::LOG, ListType::TAG];
-}
-
-#[derive(Debug, Default)]
 struct State {
     data: PersistentData,
     list_state: ListState,
     adding_log: bool,
     input: String,
     input_display: Line<'static>,
-    anims: AnimationHandler,
+    main_panel_title: &'static str,
+    anims: RefCell<AnimationHandler>,
     input_anim: usize,
     focused_list: usize,
     dt: f64,
@@ -124,7 +128,7 @@ impl State {
 
 fn main() -> Result<()> {
     let mut state = init()?;
-    state.input_anim = state.anims.add(
+    state.input_anim = state.anims.borrow_mut().add(
         sweep_in(
             tachyonfx::Motion::LeftToRight,
             16,
@@ -133,6 +137,7 @@ fn main() -> Result<()> {
             FxDuration::from_millis(500),
         ),
         Rect::default(),
+        Some(Box::new(|x| x.adding_log)),
     );
 
     let terminal = ratatui::init();
@@ -150,7 +155,20 @@ fn unicode_icon<'a>(icon: u32, color: Color) -> Span<'a> {
 }
 
 fn init() -> Result<State> {
-    let mut state = State::default();
+    let mut state = State {
+        data: PersistentData::default(),
+        list_state: ListState::default(),
+        adding_log: false,
+        input: String::from(""),
+        input_display: Line::default(),
+        main_panel_title: "",
+        anims: RefCell::new(AnimationHandler { animations: vec![] }),
+        input_anim: 0,
+        focused_list: 0,
+        dt: 0.0,
+    };
+
+    state.main_panel_title = ListType::LOG.to_str();
     let mut data_path = config_dir().unwrap();
     data_path.push("kairotui");
     fs::create_dir_all(&data_path)?;
@@ -207,6 +225,7 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
             state.focused_list += 1;
             state.focused_list %= ListType::TYPES.len();
             state.list_state.scroll_up_by(u16::MAX);
+            state.main_panel_title = ListType::TYPES[state.focused_list].to_str();
         }
         _ => {}
     }
@@ -238,7 +257,7 @@ fn run(mut terminal: DefaultTerminal, state: &mut State) -> Result<()> {
         update_logs(&mut state.data.items);
         terminal.draw(|x| render(x, state))?;
 
-        let timeout = if state.anims.running() {
+        let timeout = if state.anims.borrow().running() {
             Duration::from_millis(32)
         } else {
             Duration::from_millis(500)
@@ -258,11 +277,7 @@ fn run(mut terminal: DefaultTerminal, state: &mut State) -> Result<()> {
 fn compute_main_layout(frame: &Frame, state: &State) -> (Rect, Rect, Option<Rect>) {
     let [tabs_and_main] = Layout::vertical([Constraint::Fill(1)]).margin(1).areas(frame.area());
 
-    let [tab_area, main_area] = Layout::horizontal([
-        Constraint::Length(20), // Width of tab area
-        Constraint::Min(10),
-    ])
-    .areas(tabs_and_main);
+    let [tab_area, main_area] = Layout::horizontal([Constraint::Length(20), Constraint::Min(10)]).areas(tabs_and_main);
 
     if state.adding_log {
         let [todo_area, input_area] = Layout::vertical([Constraint::Min(5), Constraint::Length(3)]).areas(main_area);
@@ -274,6 +289,7 @@ fn compute_main_layout(frame: &Frame, state: &State) -> (Rect, Rect, Option<Rect
 }
 
 fn render_input_window(area: Rect, state: &mut State, frame: &mut Frame) {
+    state.anims.borrow_mut().animations[state.input_anim].area = area;
     Paragraph::new(state.input_display.clone())
         .block(
             Block::bordered()
@@ -314,7 +330,7 @@ fn get_log_tag_text<'a>(log: &'a Log, tag_sys: &'a TagSys) -> Vec<Span<'a>> {
     spans
 }
 
-fn render_todo_list(state: &mut State, outer_block: &Block, area: &Rect, frame: &mut Frame) {
+fn render_log_list(state: &mut State, outer_block: &Block, area: &Rect, frame: &mut Frame) {
     let list = List::new(state.data.items.iter().enumerate().map(|(i, l)| {
         let v = if l.done {
             l.text.to_span().crossed_out()
@@ -357,15 +373,16 @@ fn render_tab_list(area: &Rect, state: &State, frame: &mut Frame) {
 
 fn render_main_screen(frame: &mut Frame, state: &mut State) -> Option<Rect> {
     let (tab_area, todo_area, input_area) = compute_main_layout(frame, state);
+    let panel_txt = state.main_panel_title;
 
     let outer_block = Block::bordered()
         .border_type(BorderType::Rounded)
         .fg(theme::BLUE)
         .bg(theme::BG0)
-        .title(" Logs ".to_span().into_centered_line());
+        .title(panel_txt.to_span().into_centered_line());
 
     match ListType::TYPES[state.focused_list] {
-        ListType::LOG => render_todo_list(state, &outer_block, &todo_area, frame),
+        ListType::LOG => render_log_list(state, &outer_block, &todo_area, frame),
         ListType::TAG => render_tag_list(state, &outer_block, &todo_area, frame),
     }
 
@@ -381,11 +398,9 @@ fn render(frame: &mut Frame, state: &mut State) {
         assert!(input_area.is_some(), "input area not ready");
         let area = input_area.unwrap();
         render_input_window(area, state, frame);
-        state.anims.set_progress(true, state.input_anim, area);
     } else {
-        state.anims.reset_anim(state.input_anim);
-        state.anims.set_progress(false, state.input_anim, Rect::default());
+        state.anims.borrow_mut().reset_anim(state.input_anim);
     }
 
-    state.anims.progress(frame, state.dt);
+    state.anims.borrow_mut().progress(frame, state.dt, state);
 }
