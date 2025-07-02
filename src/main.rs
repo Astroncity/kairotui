@@ -8,14 +8,14 @@ use crate::log::Log;
 use animation::AnimationHandler;
 
 use crate::tag::*;
-use anyhow::{Ok, Result};
+use anyhow::{Context, Ok, Result};
 use dirs::config_dir;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyEvent},
     layout::{Constraint, Layout, Rect},
     style::{Color, Style, Stylize},
-    text::{Line, Span, ToSpan},
+    text::{Line, Span, ToLine, ToSpan},
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph, Widget},
 };
 use regex::Regex;
@@ -52,6 +52,7 @@ macro_rules! after_anim {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct PersistentData {
+    opened_once: bool,
     items: Vec<Log>,
     tags: TagSys,
     save_path: Option<String>,
@@ -304,7 +305,7 @@ fn handle_main_layout_anims(areas: &[Rect; 2], state: &mut State) {
         "main_area",
         fx::coalesce(FxDuration::from_millis(500)),
         areas[0],
-        |_, _| true
+        |s, a| s.data.opened_once || after_anim!(a, "intro_end")
     );
     add_anim_if_missing!(
         state,
@@ -316,6 +317,7 @@ fn handle_main_layout_anims(areas: &[Rect; 2], state: &mut State) {
 }
 
 fn compute_main_layout(frame: &Frame, state: &mut State) -> (Rect, Rect, Option<Rect>) {
+    state.data.opened_once = true;
     let [tabs_and_main] = Layout::vertical([Constraint::Fill(1)]).margin(1).areas(frame.area());
 
     let [tab_area, main_area] = Layout::horizontal([Constraint::Length(20), Constraint::Min(10)]).areas(tabs_and_main);
@@ -448,8 +450,79 @@ fn render_main_screen(frame: &mut Frame, state: &mut State) -> Option<Rect> {
     input_area
 }
 
+fn render_intro(frame: &mut Frame, state: &mut State) {
+    if state.data.opened_once {
+        return;
+    }
+    let logo = r"
+     /$$   /$$           /$$                       /$$               /$$
+    | $$  /$$/          |__/                      | $$              |__/
+    | $$ /$$/   /$$$$$$  /$$  /$$$$$$   /$$$$$$  /$$$$$$   /$$   /$$ /$$
+    | $$$$$/   |____  $$| $$ /$$__  $$ /$$__  $$|_  $$_/  | $$  | $$| $$
+    | $$  $$    /$$$$$$$| $$| $$  \__/| $$  \ $$  | $$    | $$  | $$| $$
+    | $$\  $$  /$$__  $$| $$| $$      | $$  | $$  | $$ /$$| $$  | $$| $$
+    | $$ \  $$|  $$$$$$$| $$| $$      |  $$$$$$/  |  $$$$/|  $$$$$$/| $$
+    |__/  \__/ \_______/|__/|__/       \______/    \___/   \______/ |__/
+    ";
+
+    let [area] = Layout::vertical([Constraint::Fill(1)]).margin(1).areas(frame.area());
+    let [inner] = Layout::vertical([Constraint::Fill(1)]).margin(1).areas(area);
+
+    Block::bordered()
+        .border_type(BorderType::Rounded)
+        .fg(theme::BLUE)
+        .render(area, frame.buffer_mut());
+
+    Paragraph::new(logo)
+        .centered()
+        .fg(theme::BLUE)
+        .render(inner, frame.buffer_mut());
+
+    let dur = 500;
+
+    add_anim_if_missing!(
+        state,
+        "intro_start",
+        fx::sweep_in(
+            tachyonfx::Motion::UpToDown,
+            10,
+            1,
+            theme::BG0,
+            FxDuration::from_millis(dur)
+        ),
+        area,
+        |_, _| { true }
+    );
+    add_anim_if_missing!(
+        state,
+        "para",
+        fx::coalesce(FxDuration::from_millis(dur)),
+        inner,
+        |_, a| { after_anim!(a, "intro_start") }
+    );
+    add_anim_if_missing!(
+        state,
+        "intro_end",
+        fx::delay(
+            FxDuration::from_millis(dur * 2),
+            fx::dissolve(FxDuration::from_millis(dur))
+        ),
+        area,
+        |_, a| after_anim!(a, "para")
+    );
+}
+
 fn render(frame: &mut Frame, state: &mut State) {
-    let input_area = render_main_screen(frame, state);
+    let mut input_area: Option<Rect> = None;
+
+    if state.data.opened_once
+        || state.anims.borrow().animations.contains_key("intro_end")
+            && state.anims.borrow().animations["intro_end"].effect.done()
+    {
+        input_area = render_main_screen(frame, state);
+    } else {
+        render_intro(frame, state);
+    }
 
     if state.adding_log {
         assert!(input_area.is_some(), "input area not ready");
