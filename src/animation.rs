@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use crate::State;
 use ratatui::{Frame, layout::Rect};
 use tachyonfx::{Duration as FxDuration, Effect, Shader};
-use tracing::{Level, event};
 
 #[derive()]
 pub struct Animation {

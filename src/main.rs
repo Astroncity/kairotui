@@ -6,17 +6,18 @@ mod theme;
 use crate::log::Log;
 
 use animation::AnimationHandler;
+use color_eyre::owo_colors::OwoColorize;
 
 use crate::tag::*;
-use anyhow::{Context, Ok, Result};
+use anyhow::{Ok, Result};
 use dirs::config_dir;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyEvent},
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
-    text::{Line, Span, ToLine, ToSpan},
-    widgets::{Block, BorderType, List, ListItem, ListState, Paragraph, Widget},
+    text::{Line, Span, ToSpan},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Padding, Paragraph, Widget},
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -26,10 +27,10 @@ use std::{
     time::{Duration, Instant},
 };
 use tachyonfx::{
-    Duration as FxDuration, Effect, Shader,
+    Duration as FxDuration, Shader,
     fx::{self, sweep_in},
 };
-use tracing::{Level, event as trace_event, info};
+use tracing::{Level, event as trace_event};
 use tracing_appender;
 use tracing_subscriber::FmtSubscriber;
 
@@ -123,12 +124,46 @@ struct State {
     data: PersistentData,
     list_state: ListState,
     adding_log: bool,
+    on_input_dialog: bool,
     input: String,
     input_display: Line<'static>,
     main_panel_title: &'static str,
     anims: RefCell<AnimationHandler>,
     focused_list: usize,
     dt: f64,
+}
+
+fn input_dialog_area(frame: &mut Frame) -> Rect {
+    let vert = Layout::vertical([Constraint::Percentage(8)]).flex(Flex::Center);
+    let horz = Layout::horizontal([Constraint::Percentage(50)]).flex(Flex::Center);
+    let [area] = vert.areas(frame.area());
+    let [area] = horz.areas(area);
+    area
+}
+
+fn render_input_dialog(title: &str, empty_msg: &str, area: Rect, frame: &mut Frame, state: &mut State) {
+    let has_input = !state.input.is_empty();
+    let txt = if !has_input {
+        Line::from(empty_msg)
+    } else {
+        let mut s = state.input_display.clone();
+        let l: &mut Span = s.spans.iter_mut().last().unwrap();
+        *l = Span::styled(format!("{}█", l.content.clone().to_string()), l.style);
+        s
+    };
+
+    let color = if has_input { theme::TEXT } else { theme::TEXT_ALT };
+
+    Paragraph::new(txt.clone())
+        .block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .fg(theme::ORANG)
+                .title(title.to_span().into_centered_line()),
+        )
+        .left_aligned()
+        .fg(color)
+        .render(area, frame.buffer_mut());
 }
 
 impl State {
@@ -184,6 +219,7 @@ fn init() -> Result<State> {
         list_state: ListState::default(),
         adding_log: false,
         input: String::from(""),
+        on_input_dialog: false,
         input_display: Line::default(),
         main_panel_title: "",
         anims: RefCell::new(AnimationHandler {
@@ -316,49 +352,14 @@ fn handle_main_layout_anims(areas: &[Rect; 2], state: &mut State) {
     );
 }
 
-fn compute_main_layout(frame: &Frame, state: &mut State) -> (Rect, Rect, Option<Rect>) {
+fn compute_main_layout(frame: &Frame, state: &mut State) -> (Rect, Rect) {
     state.data.opened_once = true;
     let [tabs_and_main] = Layout::vertical([Constraint::Fill(1)]).margin(1).areas(frame.area());
-
     let [tab_area, main_area] = Layout::horizontal([Constraint::Length(20), Constraint::Min(10)]).areas(tabs_and_main);
+    let [todo_area] = Layout::vertical([Constraint::Fill(1)]).areas(main_area);
 
-    if state.adding_log {
-        let [log_area, input_area] = Layout::vertical([Constraint::Min(5), Constraint::Length(3)]).areas(main_area);
-        handle_main_layout_anims(&[log_area, tab_area], state);
-        (tab_area, log_area, Some(input_area))
-    } else {
-        let [todo_area] = Layout::vertical([Constraint::Fill(1)]).areas(main_area);
-        handle_main_layout_anims(&[todo_area, tab_area], state);
-        (tab_area, todo_area, None)
-    }
-}
-
-fn render_input_window(area: Rect, state: &mut State, frame: &mut Frame) {
-    if !state.anims.borrow().animations.contains_key("input") {
-        state.anims.borrow_mut().add(
-            "input",
-            sweep_in(
-                tachyonfx::Motion::LeftToRight,
-                16,
-                0,
-                theme::BG0,
-                FxDuration::from_millis(500),
-            ),
-            area,
-            Some(Box::new(|x, _| x.adding_log)),
-        );
-    }
-
-    Paragraph::new(state.input_display.clone())
-        .block(
-            Block::bordered()
-                .border_type(BorderType::Rounded)
-                .fg(theme::ORANG)
-                .bg(theme::BG0)
-                .title(" New Task "),
-        )
-        .fg(theme::TEXT)
-        .render(area, frame.buffer_mut());
+    handle_main_layout_anims(&[todo_area, tab_area], state);
+    (tab_area, todo_area)
 }
 
 fn duration_as_hhmmss(dur: Duration) -> String {
@@ -430,8 +431,8 @@ fn render_tab_list(area: &Rect, state: &State, frame: &mut Frame) {
     frame.render_stateful_widget(tab_list, *area, &mut st);
 }
 
-fn render_main_screen(frame: &mut Frame, state: &mut State) -> Option<Rect> {
-    let (tab_area, todo_area, input_area) = compute_main_layout(frame, state);
+fn render_main_screen(frame: &mut Frame, state: &mut State) {
+    let (tab_area, todo_area) = compute_main_layout(frame, state);
     let panel_txt = state.main_panel_title;
 
     let outer_block = Block::bordered()
@@ -446,8 +447,6 @@ fn render_main_screen(frame: &mut Frame, state: &mut State) -> Option<Rect> {
     }
 
     render_tab_list(&tab_area, state, frame);
-
-    input_area
 }
 
 fn render_intro(frame: &mut Frame, state: &mut State) {
@@ -513,21 +512,19 @@ fn render_intro(frame: &mut Frame, state: &mut State) {
 }
 
 fn render(frame: &mut Frame, state: &mut State) {
-    let mut input_area: Option<Rect> = None;
-
     if state.data.opened_once
         || state.anims.borrow().animations.contains_key("intro_end")
             && state.anims.borrow().animations["intro_end"].effect.done()
     {
-        input_area = render_main_screen(frame, state);
+        render_main_screen(frame, state);
     } else {
         render_intro(frame, state);
     }
 
     if state.adding_log {
-        assert!(input_area.is_some(), "input area not ready");
-        let area = input_area.unwrap();
-        render_input_window(area, state, frame);
+        let area = input_dialog_area(frame);
+        frame.render_widget(Clear, area);
+        render_input_dialog(" New Log ", "<log_name> (tag: <tag_name>)*", area, frame, state);
     }
 
     let msg = format!("state.adding_log: {}", state.adding_log);
