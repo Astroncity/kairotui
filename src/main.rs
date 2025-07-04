@@ -6,7 +6,9 @@ mod theme;
 use crate::log::Log;
 
 use animation::AnimationHandler;
-use color_eyre::owo_colors::OwoColorize;
+
+#[allow(unused_imports)]
+use tracing::{info, warn};
 
 use crate::tag::*;
 use anyhow::{Ok, Result};
@@ -17,7 +19,7 @@ use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, ToSpan},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Padding, Paragraph, Widget},
+    widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Widget},
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -28,9 +30,8 @@ use std::{
 };
 use tachyonfx::{
     Duration as FxDuration, Shader,
-    fx::{self, sweep_in},
+    fx::{self},
 };
-use tracing::{Level, event as trace_event};
 use tracing_appender;
 use tracing_subscriber::FmtSubscriber;
 
@@ -123,7 +124,6 @@ impl ListType {
 struct State {
     data: PersistentData,
     list_state: ListState,
-    adding_log: bool,
     on_input_dialog: bool,
     input: String,
     input_display: Line<'static>,
@@ -131,6 +131,27 @@ struct State {
     anims: RefCell<AnimationHandler>,
     focused_list: usize,
     dt: f64,
+}
+
+impl State {
+    pub fn update_input_display(&mut self) {
+        let regex = Regex::new(r"(tag:\s(\w+))+$").unwrap();
+
+        self.input_display = if regex.is_match(&self.input) {
+            let index = self.input.find(" tag: ").unwrap();
+
+            Line::from(vec![
+                Span::styled(self.input[..index].to_string(), theme::TEXT),
+                Span::styled(self.input[index..].to_string(), theme::ORANG),
+            ])
+        } else {
+            Line::from(vec![Span::raw(self.input.clone())])
+        };
+    }
+
+    pub fn curr_list(self: &Self) -> ListType {
+        ListType::TYPES[self.focused_list]
+    }
 }
 
 fn input_dialog_area(frame: &mut Frame) -> Rect {
@@ -166,32 +187,11 @@ fn render_input_dialog(title: &str, empty_msg: &str, area: Rect, frame: &mut Fra
         .render(area, frame.buffer_mut());
 }
 
-impl State {
-    pub fn update_input_display(&mut self) {
-        let regex = Regex::new(r"(tag:\s(\w+))+$").unwrap();
-
-        self.input_display = if regex.is_match(&self.input) {
-            let index = self.input.chars().position(|c| c == 't').unwrap_or(0);
-
-            Line::from(vec![
-                Span::styled(self.input[..index].to_string(), theme::TEXT),
-                Span::styled(self.input[index..].to_string(), theme::ORANG),
-            ])
-        } else {
-            Line::from(vec![Span::raw(self.input.clone())])
-        };
-    }
-
-    pub fn curr_list(self: &Self) -> ListType {
-        ListType::TYPES[self.focused_list]
-    }
-}
-
 fn main() -> Result<()> {
     let file_appender = tracing_appender::rolling::daily("/home/astro/projects/kairotui/", "kairotui.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::TRACE)
+        .with_max_level(tracing::Level::TRACE)
         .with_writer(non_blocking)
         .finish();
 
@@ -217,7 +217,6 @@ fn init() -> Result<State> {
     let mut state = State {
         data: PersistentData::default(),
         list_state: ListState::default(),
-        adding_log: false,
         input: String::from(""),
         on_input_dialog: false,
         input_display: Line::default(),
@@ -263,7 +262,7 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
             'q' => return true,
             'A' => {
                 if state.curr_list() == ListType::LOG {
-                    state.adding_log = true;
+                    state.on_input_dialog = true;
                 }
             }
             'D' => {
@@ -296,9 +295,9 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
 fn handle_event(state: &mut State) -> bool {
     let _ = state.data.save();
     if let Event::Key(key) = event::read().unwrap() {
-        if state.adding_log {
+        if state.on_input_dialog {
             if log::handle_add(key, state) {
-                state.adding_log = false;
+                state.on_input_dialog = false;
             }
         } else {
             return handle_key(key, state);
@@ -521,13 +520,11 @@ fn render(frame: &mut Frame, state: &mut State) {
         render_intro(frame, state);
     }
 
-    if state.adding_log {
+    if state.on_input_dialog {
         let area = input_dialog_area(frame);
         frame.render_widget(Clear, area);
         render_input_dialog(" New Log ", "<log_name> (tag: <tag_name>)*", area, frame, state);
     }
 
-    let msg = format!("state.adding_log: {}", state.adding_log);
-    trace_event!(Level::INFO, msg);
     state.anims.borrow_mut().progress(frame, state.dt, state);
 }
