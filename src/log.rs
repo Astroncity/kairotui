@@ -1,5 +1,4 @@
 use crate::{ListType, State};
-use ratatui::crossterm::event::{self, KeyEvent};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, time::Instant};

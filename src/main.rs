@@ -7,7 +7,6 @@ use crate::log::Log;
 
 use animation::AnimationHandler;
 
-use color_eyre::owo_colors::OwoColorize;
 #[allow(unused_imports)]
 use tracing::{info, warn};
 

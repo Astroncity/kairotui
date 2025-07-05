@@ -1,6 +1,4 @@
 use crate::{State, theme, unicode_icon};
-
-use color_eyre::owo_colors::style;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -10,6 +8,8 @@ use ratatui::{
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+#[allow(unused_imports)]
 use tracing::{info, warn};
 
 #[derive(Default, Serialize, Deserialize, Debug)]
@@ -68,9 +68,8 @@ pub fn handle_edit(state: &mut State, input: String) {
         .unwrap();
 
     let (new_name, color_str_org) = input.split_once(":").unwrap();
-    let color_str = color_str_org.replace(": #", "");
-    info!("{}", color_str);
-    let color = color_str.trim().parse().unwrap();
+    let color_str = color_str_org.replace(" #", "");
+    let color = u32::from_str_radix(&color_str, 16).unwrap();
 
     let iter = state.data.items.iter_mut().filter(|l| l.tags.contains(tag.name()));
     for log in iter {

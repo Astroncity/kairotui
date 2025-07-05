@@ -1,5 +1,6 @@
-[2m2025-07-05T01:40:13.989878Z[0m [33m WARN[0m [2mkairotui::tag[0m[2m:[0m Wrong format for tag edit
-[2m2025-07-05T01:40:48.334673Z[0m [33m WARN[0m [2mkairotui::tag[0m[2m:[0m Wrong format for tag edit
-[2m2025-07-05T01:44:49.262412Z[0m [32m INFO[0m [2mkairotui::tag[0m[2m:[0m  #00FF00
-[2m2025-07-05T01:45:40.082161Z[0m [32m INFO[0m [2mkairotui::tag[0m[2m:[0m  #FFFFFF
-[2m2025-07-05T01:47:32.772539Z[0m [32m INFO[0m [2mkairotui::tag[0m[2m:[0m  #FFFFFF
+[2m2025-07-05T09:33:19.216999Z[0m [32m INFO[0m [2mkairotui::tag[0m[2m:[0m  #FFFFFF--- #FFFFFF
+[2m2025-07-05T09:33:54.473816Z[0m [32m INFO[0m [2mkairotui::tag[0m[2m:[0m  #FFFFFF--- #FFFFFF
+[2m2025-07-05T09:34:31.726836Z[0m [32m INFO[0m [2mkairotui::tag[0m[2m:[0m | #FF00FF--- #FF00FF|
+[2m2025-07-05T09:35:08.091946Z[0m [32m INFO[0m [2mkairotui::tag[0m[2m:[0m |a--- #FFFFFF--- #FFFFFF|
+[2m2025-07-05T09:35:36.103475Z[0m [32m INFO[0m [2mkairotui::tag[0m[2m:[0m |test---FFFFFF--- #FFFFFF|
+[2m2025-07-05T09:37:54.579993Z[0m [32m INFO[0m [2mkairotui::tag[0m[2m:[0m |new_name---FFFFFF--- #FFFFFF|
