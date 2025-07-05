@@ -57,6 +57,8 @@ pub fn handle_edit(state: &mut State, input: String) {
     let check = Regex::new(r"^\w+:\s#\w{6}$").unwrap();
     if !check.is_match(&input) {
         warn!("Wrong format for tag edit");
+        state.popup_msg = Span::styled("Bad Input", Color::Red);
+        state.popup_active = true;
         return;
     }
 
@@ -71,7 +73,11 @@ pub fn handle_edit(state: &mut State, input: String) {
     let color_str = color_str_org.replace(" #", "");
     let color = u32::from_str_radix(&color_str, 16).unwrap();
 
-    let iter = state.data.items.iter_mut().filter(|l| l.tags.contains(tag.name()));
+    let iter = state
+        .data
+        .items
+        .iter_mut()
+        .filter(|l| l.tags.contains(tag.name()));
     for log in iter {
         log.tags.remove(tag.name());
         log.tags.insert(new_name.to_string());
@@ -81,19 +87,29 @@ pub fn handle_edit(state: &mut State, input: String) {
     tag.color = color;
 }
 
-pub fn render_tag_list(state: &mut State, outer_block: &Block, area: &Rect, frame: &mut Frame) {
-    let list = List::new(state.data.tags.tags().into_iter().enumerate().map(|(i, l)| {
-        let name = l.name();
-        let icon = unicode_icon(0xf1224, Color::from_u32(*l.color()));
-        let ln = Line::from(vec![
-            icon,
-            Span::raw(name),
-            Span::styled(format!("{}{}", " ".repeat(20 - name.len()), l.refs), theme::BLUE),
-        ]);
+pub fn render_tag_list(
+    state: &mut State,
+    outer_block: &Block,
+    area: &Rect,
+    frame: &mut Frame,
+) {
+    let list = List::new(state.data.tags.tags().into_iter().enumerate().map(
+        |(i, l)| {
+            let name = l.name();
+            let icon = unicode_icon(0xf1224, Color::from_u32(*l.color()));
+            let ln = Line::from(vec![
+                icon,
+                Span::raw(name),
+                Span::styled(
+                    format!("{}{}", " ".repeat(20 - name.len()), l.refs),
+                    theme::BLUE,
+                ),
+            ]);
 
-        let color = if i % 2 == 0 { theme::BG0 } else { theme::BG1 };
-        ListItem::from(ln).bg(color)
-    }))
+            let color = if i % 2 == 0 { theme::BG0 } else { theme::BG1 };
+            ListItem::from(ln).bg(color)
+        },
+    ))
     .block(outer_block.clone())
     .fg(theme::TEXT)
     .bg(theme::BG0)

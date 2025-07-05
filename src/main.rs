@@ -126,7 +126,9 @@ impl ListType {
 struct State {
     data: PersistentData,
     list_state: ListState,
-    on_input_dialog: bool,
+    input_dialog_active: bool,
+    popup_active: bool,
+    popup_msg: Span<'static>,
     input: String,
     input_default: (&'static str, &'static str),
     input_display: Line<'static>,
@@ -154,32 +156,34 @@ impl State {
     }
 }
 
-fn input_dialog_area(frame: &mut Frame) -> Rect {
-    let vert = Layout::vertical([Constraint::Percentage(8)]).flex(Flex::Center);
-    let horz =
-        Layout::horizontal([Constraint::Percentage(50)]).flex(Flex::Center);
-    let [area] = vert.areas(frame.area());
-    let [area] = horz.areas(area);
-    area
+fn render_popup(title: &str, msg: &Span, frame: &mut Frame) {
+    let c = msg.style.fg.unwrap_or(theme::TEXT);
+    let area = {
+        let vert = Layout::vertical([Constraint::Percentage(15)]).flex(Flex::Center);
+        let horz = Layout::horizontal([Constraint::Percentage(30)]).flex(Flex::Center);
+        let [area] = vert.areas(frame.area());
+        let [area] = horz.areas(area);
+        area
+    };
+    Paragraph::new(msg.clone())
+        .block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .fg(c)
+                .title(title.to_span().into_centered_line()),
+        )
+        .centered()
+        .render(area, frame.buffer_mut());
 }
 
-fn render_input_dialog(
-    title: &str,
-    empty_msg: &str,
-    area: Rect,
-    frame: &mut Frame,
-    state: &mut State,
-) {
+fn render_input_dialog(title: &str, def: &str, frame: &mut Frame, state: &mut State) {
     let has_input = !state.input.is_empty();
     let txt = if !has_input {
-        Line::from(empty_msg)
+        Line::from(def)
     } else {
         let mut s = state.input_display.clone();
         let l: &mut Span = s.spans.iter_mut().last().unwrap();
-        *l = Span::styled(
-            format!("{}█", l.content.clone().to_string()),
-            l.style,
-        );
+        *l = Span::styled(format!("{}█", l.content.clone().to_string()), l.style);
         s
     };
 
@@ -189,6 +193,15 @@ fn render_input_dialog(
         theme::TEXT_ALT
     };
 
+    let area = {
+        let vert = Layout::vertical([Constraint::Percentage(8)]).flex(Flex::Center);
+        let horz = Layout::horizontal([Constraint::Percentage(50)]).flex(Flex::Center);
+        let [area] = vert.areas(frame.area());
+        let [area] = horz.areas(area);
+        area
+    };
+
+    frame.render_widget(Clear, area);
     Paragraph::new(txt.clone())
         .block(
             Block::bordered()
@@ -236,7 +249,7 @@ fn init() -> Result<State> {
         data: PersistentData::default(),
         list_state: ListState::default(),
         input: String::from(""),
-        on_input_dialog: false,
+        input_dialog_active: false,
         input_display: Line::default(),
         main_panel_title: "",
         anims: RefCell::new(AnimationHandler {
@@ -244,6 +257,8 @@ fn init() -> Result<State> {
         }),
         focused_list: ListType::LOG,
         focused_list_idx: 0,
+        popup_active: false,
+        popup_msg: Span::raw(""),
         input_default: ("", ""),
         dt: 0.0,
     };
@@ -260,8 +275,7 @@ fn init() -> Result<State> {
     if fs::exists(&data_path)? {
         state.data = state.data.load()?;
     } else {
-        state.data =
-            PersistentData::new(data_path.to_str().unwrap().to_owned());
+        state.data = PersistentData::new(data_path.to_str().unwrap().to_owned());
     }
     Ok(state)
 }
@@ -274,7 +288,7 @@ fn delegate_enter(state: &mut State) {
             }
         }
         ListType::TAG => {
-            state.on_input_dialog = true;
+            state.input_dialog_active = true;
             state.input_default.0 = " Edit Tag ";
             state.input_default.1 = "<name>: <hex_color>";
         }
@@ -282,12 +296,17 @@ fn delegate_enter(state: &mut State) {
 }
 
 fn handle_key(key: KeyEvent, state: &mut State) -> bool {
+    if state.popup_active {
+        state.popup_active = false;
+        return false;
+    }
+
     match key.code {
         event::KeyCode::Char(char) => match char {
             'q' => return true,
             'A' => {
                 if state.focused_list == ListType::LOG {
-                    state.on_input_dialog = true;
+                    state.input_dialog_active = true;
                     state.input_default.0 = " New Log ";
                     state.input_default.1 = "<log_name> (tag: <tag_name>)*";
                 }
@@ -344,7 +363,7 @@ fn handle_input(key: KeyEvent, state: &mut State) -> (Option<String>, bool) {
 fn handle_event(state: &mut State) -> bool {
     let _ = state.data.save();
     if let Event::Key(key) = event::read().unwrap() {
-        if !state.on_input_dialog {
+        if !state.input_dialog_active {
             return handle_key(key, state);
         }
         let res = handle_input(key, state);
@@ -360,7 +379,7 @@ fn handle_event(state: &mut State) -> bool {
                 }
             }
         }
-        state.on_input_dialog = !res.1;
+        state.input_dialog_active = !res.1;
     }
     false
 }
@@ -457,8 +476,7 @@ fn render_tab_list(area: &Rect, state: &State, frame: &mut Frame) {
         .bg(theme::BG0)
         .highlight_style(Style::default().bg(theme::BG1));
 
-    let mut st =
-        ListState::default().with_selected(Some(state.focused_list_idx));
+    let mut st = ListState::default().with_selected(Some(state.focused_list_idx));
 
     frame.render_stateful_widget(tab_list, *area, &mut st);
 }
@@ -474,12 +492,8 @@ fn render_main_screen(frame: &mut Frame, state: &mut State) {
         .title(panel_txt.to_span().into_centered_line());
 
     match state.focused_list {
-        ListType::LOG => {
-            log::render_log_list(state, &outer_block, &todo_area, frame)
-        }
-        ListType::TAG => {
-            render_tag_list(state, &outer_block, &todo_area, frame)
-        }
+        ListType::LOG => log::render_log_list(state, &outer_block, &todo_area, frame),
+        ListType::TAG => render_tag_list(state, &outer_block, &todo_area, frame),
     }
 
     render_tab_list(&tab_area, state, frame);
@@ -561,16 +575,12 @@ fn render(frame: &mut Frame, state: &mut State) {
         render_intro(frame, state);
     }
 
-    if state.on_input_dialog {
-        let area = input_dialog_area(frame);
-        frame.render_widget(Clear, area);
-        render_input_dialog(
-            state.input_default.0,
-            state.input_default.1,
-            area,
-            frame,
-            state,
-        );
+    if state.input_dialog_active {
+        render_input_dialog(state.input_default.0, state.input_default.1, frame, state);
+    }
+
+    if state.popup_active {
+        render_popup(" Popup ", &state.popup_msg, frame);
     }
 
     state.anims.borrow_mut().progress(frame, state.dt, state);
