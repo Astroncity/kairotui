@@ -8,13 +8,15 @@ use ratatui::{
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, time::Instant};
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Log {
     pub done: bool,
     pub name: String,
-    pub text: String,
     #[serde(with = "serde_millis")]
     pub start: Instant,
     #[serde(with = "serde_millis")]
@@ -25,7 +27,6 @@ pub struct Log {
 impl Log {
     pub fn new(desc: String, tags: HashSet<String>) -> Self {
         Self {
-            text: desc.clone(),
             start: Instant::now(),
             end: Instant::now(),
             done: false,
@@ -44,8 +45,7 @@ pub fn delete_selected(state: &mut State) {
 
 fn parse_input(input: String) -> (String, Vec<String>) {
     let regex = Regex::new(r"(tag:\s(\w+))+$").unwrap();
-    let matches: Vec<&str> =
-        regex.find_iter(&input).map(|m| m.as_str()).collect();
+    let matches: Vec<&str> = regex.find_iter(&input).map(|m| m.as_str()).collect();
     let mut cpy = input.clone();
 
     for m in &matches {
@@ -88,21 +88,40 @@ pub fn render_log_list(
     frame: &mut Frame,
 ) {
     let list = List::new(state.data.items.iter().enumerate().map(|(i, l)| {
-        let v = if l.done {
-            l.text.to_span().crossed_out()
-        } else {
-            l.text.to_span()
-        };
-        let tag_txt = get_log_tag_text(l, &state.data.tags);
-        let ln = Line::from([&vec![v][..], &tag_txt[..]].concat());
+        let v = l.name.to_span().fg(theme::TEXT);
+        let mut dur_str = String::from(" ");
+        dur_str.push_str(&duration_as_hhmmss(l.end.duration_since(l.start)));
+
+        let dur = Span::styled(dur_str, Style::default().fg(Color::Cyan));
+
+        let mut vec = vec![v, dur];
+        let mut tag_txt = get_log_tag_text(l, &state.data.tags);
+        vec.append(&mut tag_txt);
+
+        let ln = Line::from(vec);
         let color = if i % 2 == 0 { theme::BG0 } else { theme::BG1 };
         ListItem::from(ln).bg(color)
     }))
     .block(outer_block.clone())
-    .fg(theme::TEXT)
     .bg(theme::BG0)
     .highlight_style(Style::default().fg(theme::ORANG))
     .highlight_symbol("> ");
 
     frame.render_stateful_widget(list, *area, &mut state.list_state);
+}
+
+fn duration_as_hhmmss(dur: Duration) -> String {
+    let total_seconds = dur.as_secs();
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let seconds = total_seconds % 60;
+
+    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+}
+
+// TODO: Optimize
+pub fn update_logs(logs: &mut [Log]) {
+    for log in logs.iter_mut().filter(|l| !l.done) {
+        log.end = Instant::now();
+    }
 }

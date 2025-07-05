@@ -117,8 +117,8 @@ impl ListType {
     }
     fn to_str(&self) -> &'static str {
         match self {
-            ListType::LOG => " Logs ",
-            ListType::TAG => " Tags ",
+            ListType::LOG => "| Logs |",
+            ListType::TAG => "| Tags |",
         }
     }
 }
@@ -392,7 +392,7 @@ fn run(mut terminal: DefaultTerminal, state: &mut State) -> Result<()> {
         state.dt = now.duration_since(last_frame).as_secs_f64();
         last_frame = now;
 
-        update_logs(&mut state.data.items);
+        log::update_logs(&mut state.data.items);
         terminal.draw(|x| render(x, state))?;
 
         let timeout = if state.anims.borrow().running() {
@@ -443,30 +443,12 @@ fn compute_main_layout(frame: &Frame, state: &mut State) -> (Rect, Rect) {
     (tab_area, todo_area)
 }
 
-fn duration_as_hhmmss(dur: Duration) -> String {
-    let total_seconds = dur.as_secs();
-    let hours = total_seconds / 3600;
-    let minutes = (total_seconds % 3600) / 60;
-    let seconds = total_seconds % 60;
-
-    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
-}
-
-// TODO: Optimize
-fn update_logs(logs: &mut [Log]) {
-    for log in logs.iter_mut().filter(|l| !l.done) {
-        log.end = Instant::now();
-        let dur = log.end.duration_since(log.start);
-        log.text = format!("{} {}", log.name, duration_as_hhmmss(dur));
-    }
-}
-
 fn render_tab_list(area: &Rect, state: &State, frame: &mut Frame) {
     let tab_block = Block::bordered()
         .border_type(BorderType::Rounded)
         .fg(theme::ORANG)
         .bg(theme::BG0)
-        .title(" Tabs ".to_span().into_centered_line());
+        .title("| Tabs |".to_span().into_centered_line());
 
     let tab_lines = ListType::TYPES.iter().map(|t| t.to_span());
 
