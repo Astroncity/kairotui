@@ -19,7 +19,7 @@ use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, ToSpan},
-    widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Widget},
+    widgets::{Block, BorderType, Clear, List, ListState, Paragraph, Widget},
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -38,10 +38,12 @@ use tracing_subscriber::FmtSubscriber;
 macro_rules! add_anim_if_missing {
     ($state:expr, $key:expr, $effect:expr, $area:expr, $trigger:expr) => {
         if !$state.anims.borrow().animations.contains_key($key) {
-            $state
-                .anims
-                .borrow_mut()
-                .add($key, $effect, $area, Some(Box::new($trigger)));
+            $state.anims.borrow_mut().add(
+                $key,
+                $effect,
+                $area,
+                Some(Box::new($trigger)),
+            );
         }
     };
 }
@@ -154,24 +156,38 @@ impl State {
 
 fn input_dialog_area(frame: &mut Frame) -> Rect {
     let vert = Layout::vertical([Constraint::Percentage(8)]).flex(Flex::Center);
-    let horz = Layout::horizontal([Constraint::Percentage(50)]).flex(Flex::Center);
+    let horz =
+        Layout::horizontal([Constraint::Percentage(50)]).flex(Flex::Center);
     let [area] = vert.areas(frame.area());
     let [area] = horz.areas(area);
     area
 }
 
-fn render_input_dialog(title: &str, empty_msg: &str, area: Rect, frame: &mut Frame, state: &mut State) {
+fn render_input_dialog(
+    title: &str,
+    empty_msg: &str,
+    area: Rect,
+    frame: &mut Frame,
+    state: &mut State,
+) {
     let has_input = !state.input.is_empty();
     let txt = if !has_input {
         Line::from(empty_msg)
     } else {
         let mut s = state.input_display.clone();
         let l: &mut Span = s.spans.iter_mut().last().unwrap();
-        *l = Span::styled(format!("{}█", l.content.clone().to_string()), l.style);
+        *l = Span::styled(
+            format!("{}█", l.content.clone().to_string()),
+            l.style,
+        );
         s
     };
 
-    let color = if has_input { theme::TEXT } else { theme::TEXT_ALT };
+    let color = if has_input {
+        theme::TEXT
+    } else {
+        theme::TEXT_ALT
+    };
 
     Paragraph::new(txt.clone())
         .block(
@@ -186,14 +202,18 @@ fn render_input_dialog(title: &str, empty_msg: &str, area: Rect, frame: &mut Fra
 }
 
 fn main() -> Result<()> {
-    let file_appender = tracing_appender::rolling::daily("/home/astro/projects/kairotui/", "kairotui.log");
+    let file_appender = tracing_appender::rolling::daily(
+        "/home/astro/projects/kairotui/",
+        "kairotui.log",
+    );
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     let subscriber = FmtSubscriber::builder()
         .with_max_level(tracing::Level::TRACE)
         .with_writer(non_blocking)
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("setting default subscriber failed");
 
     let mut state = init()?;
 
@@ -240,7 +260,8 @@ fn init() -> Result<State> {
     if fs::exists(&data_path)? {
         state.data = state.data.load()?;
     } else {
-        state.data = PersistentData::new(data_path.to_str().unwrap().to_owned());
+        state.data =
+            PersistentData::new(data_path.to_str().unwrap().to_owned());
     }
     Ok(state)
 }
@@ -391,8 +412,12 @@ fn handle_main_layout_anims(areas: &[Rect; 2], state: &mut State) {
 
 fn compute_main_layout(frame: &Frame, state: &mut State) -> (Rect, Rect) {
     state.data.opened_once = true;
-    let [tabs_and_main] = Layout::vertical([Constraint::Fill(1)]).margin(1).areas(frame.area());
-    let [tab_area, main_area] = Layout::horizontal([Constraint::Length(20), Constraint::Min(10)]).areas(tabs_and_main);
+    let [tabs_and_main] = Layout::vertical([Constraint::Fill(1)])
+        .margin(1)
+        .areas(frame.area());
+    let [tab_area, main_area] =
+        Layout::horizontal([Constraint::Length(20), Constraint::Min(10)])
+            .areas(tabs_and_main);
     let [todo_area] = Layout::vertical([Constraint::Fill(1)]).areas(main_area);
 
     handle_main_layout_anims(&[todo_area, tab_area], state);
@@ -417,38 +442,6 @@ fn update_logs(logs: &mut [Log]) {
     }
 }
 
-fn get_log_tag_text<'a>(log: &'a Log, sys: &'a TagSys) -> Vec<Span<'a>> {
-    let mut spans: Vec<Span> = Vec::new();
-    for t in &log.tags {
-        let str = String::from(" ") + t;
-        let tag = sys.tags().iter().find(|e| e.name() == t).unwrap();
-        let color = Color::from_u32(*tag.color());
-        spans.push(Span::styled(str, color));
-    }
-    spans
-}
-
-fn render_log_list(state: &mut State, outer_block: &Block, area: &Rect, frame: &mut Frame) {
-    let list = List::new(state.data.items.iter().enumerate().map(|(i, l)| {
-        let v = if l.done {
-            l.text.to_span().crossed_out()
-        } else {
-            l.text.to_span()
-        };
-        let tag_txt = get_log_tag_text(l, &state.data.tags);
-        let ln = Line::from([&vec![v][..], &tag_txt[..]].concat());
-        let color = if i % 2 == 0 { theme::BG0 } else { theme::BG1 };
-        ListItem::from(ln).bg(color)
-    }))
-    .block(outer_block.clone())
-    .fg(theme::TEXT)
-    .bg(theme::BG0)
-    .highlight_style(Style::default().fg(theme::ORANG))
-    .highlight_symbol("> ");
-
-    frame.render_stateful_widget(list, *area, &mut state.list_state);
-}
-
 fn render_tab_list(area: &Rect, state: &State, frame: &mut Frame) {
     let tab_block = Block::bordered()
         .border_type(BorderType::Rounded)
@@ -464,7 +457,8 @@ fn render_tab_list(area: &Rect, state: &State, frame: &mut Frame) {
         .bg(theme::BG0)
         .highlight_style(Style::default().bg(theme::BG1));
 
-    let mut st = ListState::default().with_selected(Some(state.focused_list_idx));
+    let mut st =
+        ListState::default().with_selected(Some(state.focused_list_idx));
 
     frame.render_stateful_widget(tab_list, *area, &mut st);
 }
@@ -480,8 +474,12 @@ fn render_main_screen(frame: &mut Frame, state: &mut State) {
         .title(panel_txt.to_span().into_centered_line());
 
     match state.focused_list {
-        ListType::LOG => render_log_list(state, &outer_block, &todo_area, frame),
-        ListType::TAG => render_tag_list(state, &outer_block, &todo_area, frame),
+        ListType::LOG => {
+            log::render_log_list(state, &outer_block, &todo_area, frame)
+        }
+        ListType::TAG => {
+            render_tag_list(state, &outer_block, &todo_area, frame)
+        }
     }
 
     render_tab_list(&tab_area, state, frame);
@@ -502,8 +500,12 @@ fn render_intro(frame: &mut Frame, state: &mut State) {
     |__/  \__/ \_______/|__/|__/       \______/    \___/   \______/ |__/
     ";
 
-    let [area] = Layout::vertical([Constraint::Fill(1)]).margin(1).areas(frame.area());
-    let [inner] = Layout::vertical([Constraint::Fill(1)]).margin(1).areas(area);
+    let [area] = Layout::vertical([Constraint::Fill(1)])
+        .margin(1)
+        .areas(frame.area());
+    let [inner] = Layout::vertical([Constraint::Fill(1)])
+        .margin(1)
+        .areas(area);
 
     Block::bordered()
         .border_type(BorderType::Rounded)
@@ -562,7 +564,13 @@ fn render(frame: &mut Frame, state: &mut State) {
     if state.on_input_dialog {
         let area = input_dialog_area(frame);
         frame.render_widget(Clear, area);
-        render_input_dialog(state.input_default.0, state.input_default.1, area, frame, state);
+        render_input_dialog(
+            state.input_default.0,
+            state.input_default.1,
+            area,
+            frame,
+            state,
+        );
     }
 
     state.anims.borrow_mut().progress(frame, state.dt, state);
