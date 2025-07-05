@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-
 use crate::{State, theme, unicode_icon};
 
+use color_eyre::owo_colors::style;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -9,12 +8,15 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, List, ListItem},
 };
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct Tag {
     name: String,
     color: u32,
+    pub refs: i32,
 }
 
 impl Tag {
@@ -28,30 +30,46 @@ impl Tag {
 
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct TagSys {
-    map: HashMap<String, Tag>,
+    tags: Vec<Tag>,
 }
 
 impl TagSys {
-    pub fn add(self: &mut Self, name: &str) {
-        self.map.insert(
-            name.to_string(),
-            Tag {
-                name: name.to_string(),
-                color: 0x00ff0000,
-            },
-        );
+    pub fn add(&mut self, name: &str) -> &mut Tag {
+        if let Some(i) = self.tags.iter().position(|t| t.name() == name) {
+            return &mut self.tags[i];
+        }
+
+        let t = Tag {
+            name: name.to_string(),
+            color: 0x00ff0000,
+            refs: 0,
+        };
+        self.tags.push(t);
+        self.tags.last_mut().unwrap()
     }
 
-    pub fn map(self: &Self) -> &HashMap<String, Tag> {
-        &self.map
+    pub fn tags(self: &Self) -> &Vec<Tag> {
+        &self.tags
+    }
+}
+
+pub fn handle_edit(_state: &mut State, input: String) {
+    let check = Regex::new(r"^w:\s#[a-zA-Z0-9]{6}$").unwrap();
+    if !check.is_match(&input) {
+        warn!("Wrong format for tag edit");
+        return;
     }
 }
 
 pub fn render_tag_list(state: &mut State, outer_block: &Block, area: &Rect, frame: &mut Frame) {
-    let list = List::new(state.data.tags.map().values().enumerate().map(|(i, l)| {
+    let list = List::new(state.data.tags.tags().into_iter().enumerate().map(|(i, l)| {
         let name = l.name();
         let icon = unicode_icon(0xf1224, Color::from_u32(*l.color()));
-        let ln = Line::from(vec![icon, Span::raw(name)]);
+        let ln = Line::from(vec![
+            icon,
+            Span::raw(name),
+            Span::styled(format!("{}{}", " ".repeat(20 - name.len()), l.refs), theme::BLUE),
+        ]);
 
         let color = if i % 2 == 0 { theme::BG0 } else { theme::BG1 };
         ListItem::from(ln).bg(color)

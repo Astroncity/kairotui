@@ -30,48 +30,29 @@ impl Log {
 }
 
 pub fn delete_selected(state: &mut State) {
-    assert!(state.curr_list() == ListType::LOG);
+    assert!(state.focused_list == ListType::LOG);
     if let Some(i) = state.list_state.selected() {
         state.data.items.remove(i);
     }
 }
 
-pub fn parse_input(state: &mut State) -> (String, Vec<String>) {
-    assert!(state.curr_list() == ListType::LOG);
+fn parse_input(input: String) -> (String, Vec<String>) {
     let regex = Regex::new(r"(tag:\s(\w+))+$").unwrap();
-    let matches: Vec<&str> = regex.find_iter(&state.input).map(|m| m.as_str()).collect();
-    let mut log_name = state.input.clone();
+    let matches: Vec<&str> = regex.find_iter(&input).map(|m| m.as_str()).collect();
+    let mut cpy = input.clone();
 
     for m in &matches {
-        log_name = log_name.replace(m, "");
+        cpy = input.replace(m, "");
     }
 
     (
-        log_name.trim().to_owned(),
+        cpy.trim().to_owned(),
         matches.iter().map(|m| m.to_string().replace("tag: ", "")).collect(),
     )
 }
 
-pub fn handle_add(key: KeyEvent, state: &mut State) -> bool {
-    assert!(state.curr_list() == ListType::LOG);
-    match key.code {
-        event::KeyCode::Enter => {
-            let (name, tags) = parse_input(state);
-            tags.iter().for_each(|t| state.data.tags.add(t));
-            state.data.items.push(Log::new(name, tags));
-            state.input.clear();
-            state.update_input_display();
-            return true;
-        }
-        event::KeyCode::Esc => return true,
-        event::KeyCode::Backspace => {
-            state.input.pop();
-        }
-        event::KeyCode::Char(c) => {
-            state.input.push(c);
-        }
-        _ => {}
-    }
-    state.update_input_display();
-    false
+pub fn handle_add(state: &mut State, input: String) {
+    let (name, tags) = parse_input(input);
+    tags.iter().for_each(|t| state.data.tags.add(t).refs += 1);
+    state.data.items.push(Log::new(name, tags));
 }

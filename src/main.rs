@@ -7,6 +7,7 @@ use crate::log::Log;
 
 use animation::AnimationHandler;
 
+use color_eyre::owo_colors::OwoColorize;
 #[allow(unused_imports)]
 use tracing::{info, warn};
 
@@ -126,10 +127,12 @@ struct State {
     list_state: ListState,
     on_input_dialog: bool,
     input: String,
+    input_default: (&'static str, &'static str),
     input_display: Line<'static>,
     main_panel_title: &'static str,
     anims: RefCell<AnimationHandler>,
-    focused_list: usize,
+    focused_list_idx: usize,
+    focused_list: ListType,
     dt: f64,
 }
 
@@ -147,10 +150,6 @@ impl State {
         } else {
             Line::from(vec![Span::raw(self.input.clone())])
         };
-    }
-
-    pub fn curr_list(self: &Self) -> ListType {
-        ListType::TYPES[self.focused_list]
     }
 }
 
@@ -224,7 +223,9 @@ fn init() -> Result<State> {
         anims: RefCell::new(AnimationHandler {
             animations: HashMap::new(),
         }),
-        focused_list: 0,
+        focused_list: ListType::LOG,
+        focused_list_idx: 0,
+        input_default: ("", ""),
         dt: 0.0,
     };
 
@@ -246,13 +247,17 @@ fn init() -> Result<State> {
 }
 
 fn delegate_enter(state: &mut State) {
-    match state.curr_list() {
+    match state.focused_list {
         ListType::LOG => {
             if let Some(i) = state.list_state.selected() {
                 state.data.items[i].done = !state.data.items[i].done;
             }
         }
-        ListType::TAG => {}
+        ListType::TAG => {
+            state.on_input_dialog = true;
+            state.input_default.0 = " Edit Tag ";
+            state.input_default.1 = "<name>: <hex_color>";
+        }
     }
 }
 
@@ -261,12 +266,14 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
         event::KeyCode::Char(char) => match char {
             'q' => return true,
             'A' => {
-                if state.curr_list() == ListType::LOG {
+                if state.focused_list == ListType::LOG {
                     state.on_input_dialog = true;
+                    state.input_default.0 = " New Log ";
+                    state.input_default.1 = "<log_name> (tag: <tag_name>)*";
                 }
             }
             'D' => {
-                if state.curr_list() == ListType::LOG {
+                if state.focused_list == ListType::LOG {
                     log::delete_selected(state);
                 }
             }
@@ -282,26 +289,58 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
             delegate_enter(state);
         }
         event::KeyCode::Tab => {
-            state.focused_list += 1;
-            state.focused_list %= ListType::TYPES.len();
+            state.focused_list_idx += 1;
+            state.focused_list_idx %= ListType::TYPES.len();
+            state.focused_list = ListType::TYPES[state.focused_list_idx];
             state.list_state.scroll_up_by(u16::MAX);
-            state.main_panel_title = ListType::TYPES[state.focused_list].to_str();
+            state.main_panel_title = state.focused_list.to_str();
         }
         _ => {}
     }
     false
 }
 
+fn handle_input(key: KeyEvent, state: &mut State) -> (Option<String>, bool) {
+    match key.code {
+        event::KeyCode::Enter => {
+            let ret = Some(state.input.clone());
+            state.input.clear();
+            state.update_input_display();
+            return (ret, true);
+        }
+        event::KeyCode::Esc => return (None, true),
+        event::KeyCode::Backspace => {
+            state.input.pop();
+        }
+        event::KeyCode::Char(c) => {
+            state.input.push(c);
+        }
+        _ => {}
+    }
+    state.update_input_display();
+    (None, false)
+}
+
 fn handle_event(state: &mut State) -> bool {
     let _ = state.data.save();
     if let Event::Key(key) = event::read().unwrap() {
-        if state.on_input_dialog {
-            if log::handle_add(key, state) {
-                state.on_input_dialog = false;
-            }
-        } else {
+        if !state.on_input_dialog {
             return handle_key(key, state);
         }
+        let res = handle_input(key, state);
+        match state.focused_list {
+            ListType::LOG => {
+                if let Some(str) = res.0 {
+                    log::handle_add(state, str);
+                }
+            }
+            ListType::TAG => {
+                if let Some(str) = res.0 {
+                    tag::handle_edit(state, str);
+                }
+            }
+        }
+        state.on_input_dialog = !res.1;
     }
     false
 }
@@ -379,11 +418,12 @@ fn update_logs(logs: &mut [Log]) {
     }
 }
 
-fn get_log_tag_text<'a>(log: &'a Log, tag_sys: &'a TagSys) -> Vec<Span<'a>> {
+fn get_log_tag_text<'a>(log: &'a Log, sys: &'a TagSys) -> Vec<Span<'a>> {
     let mut spans: Vec<Span> = Vec::new();
     for t in &log.tags {
         let str = String::from(" ") + t;
-        let color = Color::from_u32(*tag_sys.map()[t].color());
+        let tag = sys.tags().iter().find(|e| e.name() == t).unwrap();
+        let color = Color::from_u32(*tag.color());
         spans.push(Span::styled(str, color));
     }
     spans
@@ -425,7 +465,7 @@ fn render_tab_list(area: &Rect, state: &State, frame: &mut Frame) {
         .bg(theme::BG0)
         .highlight_style(Style::default().bg(theme::BG1));
 
-    let mut st = ListState::default().with_selected(Some(state.focused_list));
+    let mut st = ListState::default().with_selected(Some(state.focused_list_idx));
 
     frame.render_stateful_widget(tab_list, *area, &mut st);
 }
@@ -440,7 +480,7 @@ fn render_main_screen(frame: &mut Frame, state: &mut State) {
         .bg(theme::BG0)
         .title(panel_txt.to_span().into_centered_line());
 
-    match ListType::TYPES[state.focused_list] {
+    match state.focused_list {
         ListType::LOG => render_log_list(state, &outer_block, &todo_area, frame),
         ListType::TAG => render_tag_list(state, &outer_block, &todo_area, frame),
     }
@@ -523,7 +563,7 @@ fn render(frame: &mut Frame, state: &mut State) {
     if state.on_input_dialog {
         let area = input_dialog_area(frame);
         frame.render_widget(Clear, area);
-        render_input_dialog(" New Log ", "<log_name> (tag: <tag_name>)*", area, frame, state);
+        render_input_dialog(state.input_default.0, state.input_default.1, area, frame, state);
     }
 
     state.anims.borrow_mut().progress(frame, state.dt, state);
