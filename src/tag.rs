@@ -10,7 +10,7 @@ use ratatui::{
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{info, warn};
 
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct Tag {
@@ -53,12 +53,33 @@ impl TagSys {
     }
 }
 
-pub fn handle_edit(_state: &mut State, input: String) {
-    let check = Regex::new(r"^w:\s#[a-zA-Z0-9]{6}$").unwrap();
+pub fn handle_edit(state: &mut State, input: String) {
+    let check = Regex::new(r"^\w+:\s#\w{6}$").unwrap();
     if !check.is_match(&input) {
         warn!("Wrong format for tag edit");
         return;
     }
+
+    let tag = state
+        .data
+        .tags
+        .tags
+        .get_mut(state.list_state.selected().unwrap())
+        .unwrap();
+
+    let (new_name, color_str_org) = input.split_once(":").unwrap();
+    let color_str = color_str_org.replace(": #", "");
+    info!("{}", color_str);
+    let color = color_str.trim().parse().unwrap();
+
+    let iter = state.data.items.iter_mut().filter(|l| l.tags.contains(tag.name()));
+    for log in iter {
+        log.tags.remove(tag.name());
+        log.tags.insert(new_name.to_string());
+    }
+
+    tag.name = new_name.to_string();
+    tag.color = color;
 }
 
 pub fn render_tag_list(state: &mut State, outer_block: &Block, area: &Rect, frame: &mut Frame) {

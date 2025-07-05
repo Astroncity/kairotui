@@ -2,7 +2,7 @@ use crate::{ListType, State};
 use ratatui::crossterm::event::{self, KeyEvent};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use std::{collections::HashSet, time::Instant};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Log {
@@ -13,11 +13,11 @@ pub struct Log {
     pub start: Instant,
     #[serde(with = "serde_millis")]
     pub end: Instant,
-    pub tags: Vec<String>,
+    pub tags: HashSet<String>,
 }
 
 impl Log {
-    pub fn new(desc: String, tags: Vec<String>) -> Self {
+    pub fn new(desc: String, tags: HashSet<String>) -> Self {
         Self {
             text: desc.clone(),
             start: Instant::now(),
@@ -54,5 +54,5 @@ fn parse_input(input: String) -> (String, Vec<String>) {
 pub fn handle_add(state: &mut State, input: String) {
     let (name, tags) = parse_input(input);
     tags.iter().for_each(|t| state.data.tags.add(t).refs += 1);
-    state.data.items.push(Log::new(name, tags));
+    state.data.items.push(Log::new(name, HashSet::from_iter(tags)));
 }
