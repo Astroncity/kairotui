@@ -75,7 +75,7 @@ pub fn handle_edit(state: &mut State, input: String) {
 
     let iter = state
         .data
-        .items
+        .logs
         .iter_mut()
         .filter(|l| l.tags.contains(tag.name()));
     for log in iter {

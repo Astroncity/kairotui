@@ -57,7 +57,8 @@ macro_rules! after_anim {
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct PersistentData {
     opened_once: bool,
-    items: Vec<Log>,
+    logs: Vec<Log>,
+    past_logs: Vec<Log>,
     tags: TagSys,
     save_path: Option<String>,
 }
@@ -96,16 +97,22 @@ enum ListType {
     #[default]
     LOG,
     TAG,
+    PASTLOG,
 }
 
 impl ListType {
-    pub const TYPES: [ListType; 2] = [ListType::LOG, ListType::TAG];
+    pub const TYPES: [ListType; 3] = [ListType::LOG, ListType::TAG, ListType::PASTLOG];
 
     fn to_span(&self) -> Line {
         match self {
             ListType::LOG => {
                 let icon = unicode_icon(0xf02c, Color::Blue);
                 let name = Span::raw("Logs");
+                Line::from(vec![icon, name])
+            }
+            ListType::PASTLOG => {
+                let icon = unicode_icon(0xf02c, Color::Blue);
+                let name = Span::raw("Past Logs");
                 Line::from(vec![icon, name])
             }
             ListType::TAG => {
@@ -119,6 +126,7 @@ impl ListType {
         match self {
             ListType::LOG => "| Logs |",
             ListType::TAG => "| Tags |",
+            ListType::PASTLOG => "| Past Logs |",
         }
     }
 }
@@ -284,7 +292,10 @@ fn delegate_enter(state: &mut State) {
     match state.focused_list {
         ListType::LOG => {
             if let Some(i) = state.list_state.selected() {
-                state.data.items[i].done = !state.data.items[i].done;
+                let log = &mut state.data.logs[i];
+                log.done = true;
+                state.data.past_logs.push(log.clone());
+                state.data.logs.remove(i);
             }
         }
         ListType::TAG => {
@@ -292,6 +303,7 @@ fn delegate_enter(state: &mut State) {
             state.input_default.0 = " Edit Tag ";
             state.input_default.1 = "<name>: <hex_color>";
         }
+        _ => {}
     }
 }
 
@@ -311,11 +323,15 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
                     state.input_default.1 = "<log_name> (tag: <tag_name>)*";
                 }
             }
-            'D' => {
-                if state.focused_list == ListType::LOG {
+            'D' => match state.focused_list {
+                ListType::LOG => {
                     log::delete_selected(state);
                 }
-            }
+                ListType::PASTLOG => {
+                    log::delete_past_log(state);
+                }
+                _ => {}
+            },
             'n' | 'j' => {
                 state.list_state.select_next();
             }
@@ -378,6 +394,7 @@ fn handle_event(state: &mut State) -> bool {
                     tag::handle_edit(state, str);
                 }
             }
+            _ => {}
         }
         state.input_dialog_active = !res.1;
     }
@@ -392,7 +409,7 @@ fn run(mut terminal: DefaultTerminal, state: &mut State) -> Result<()> {
         state.dt = now.duration_since(last_frame).as_secs_f64();
         last_frame = now;
 
-        log::update_logs(&mut state.data.items);
+        log::update_logs(&mut state.data.logs);
         terminal.draw(|x| render(x, state))?;
 
         let timeout = if state.anims.borrow().running() {
@@ -464,18 +481,23 @@ fn render_tab_list(area: &Rect, state: &State, frame: &mut Frame) {
 }
 
 fn render_main_screen(frame: &mut Frame, state: &mut State) {
-    let (tab_area, todo_area) = compute_main_layout(frame, state);
+    let (tab_area, log_a) = compute_main_layout(frame, state);
     let panel_txt = state.main_panel_title;
 
-    let outer_block = Block::bordered()
+    let outer = Block::bordered()
         .border_type(BorderType::Rounded)
         .fg(theme::BLUE)
         .bg(theme::BG0)
         .title(panel_txt.to_span().into_centered_line());
 
     match state.focused_list {
-        ListType::LOG => log::render_log_list(state, &outer_block, &todo_area, frame),
-        ListType::TAG => render_tag_list(state, &outer_block, &todo_area, frame),
+        ListType::LOG => {
+            log::render_log_list(state, &outer, &log_a, frame, log::LogType::ACTIVE);
+        }
+        ListType::PASTLOG => {
+            log::render_log_list(state, &outer, &log_a, frame, log::LogType::PAST);
+        }
+        ListType::TAG => render_tag_list(state, &outer, &log_a, frame),
     }
 
     render_tab_list(&tab_area, state, frame);

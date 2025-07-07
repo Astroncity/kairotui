@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Log {
     pub done: bool,
     pub name: String,
@@ -39,8 +39,12 @@ impl Log {
 pub fn delete_selected(state: &mut State) {
     assert!(state.focused_list == ListType::LOG);
     if let Some(i) = state.list_state.selected() {
-        state.data.items.remove(i);
+        state.data.logs.remove(i);
     }
+}
+
+pub fn delete_past_log(state: &mut State) {
+    todo!()
 }
 
 fn parse_input(input: String) -> (String, Vec<String>) {
@@ -66,7 +70,7 @@ pub fn handle_add(state: &mut State, input: String) {
     tags.iter().for_each(|t| state.data.tags.add(t).refs += 1);
     state
         .data
-        .items
+        .logs
         .push(Log::new(name, HashSet::from_iter(tags)));
 }
 
@@ -81,13 +85,26 @@ fn get_log_tag_text<'a>(log: &'a Log, sys: &'a TagSys) -> Vec<Span<'a>> {
     spans
 }
 
+#[derive(PartialEq, PartialOrd, Eq)]
+pub enum LogType {
+    ACTIVE,
+    PAST,
+}
+
 pub fn render_log_list(
     state: &mut State,
     outer_block: &Block,
     area: &Rect,
     frame: &mut Frame,
+    t: LogType,
 ) {
-    let list = List::new(state.data.items.iter().enumerate().map(|(i, l)| {
+    let vec = if t == LogType::ACTIVE {
+        &state.data.logs
+    } else {
+        &state.data.past_logs
+    };
+
+    let list = List::new(vec.iter().enumerate().map(|(i, l)| {
         let v = l.name.to_span().fg(theme::TEXT);
         let mut dur_str = String::from(" ");
         dur_str.push_str(&duration_as_hhmmss(l.end.duration_since(l.start)));
