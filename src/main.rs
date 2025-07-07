@@ -235,21 +235,28 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
             'm' | 'k' => {
                 state.list_state.select_previous();
             }
+            'J' => ch_tab(state, true),
+            'K' => ch_tab(state, false),
             _ => {}
         },
         event::KeyCode::Enter => {
             delegate_enter(state);
         }
-        event::KeyCode::Tab => {
-            state.focused_list_idx += 1;
-            state.focused_list_idx %= tab::ListType::TYPES.len();
-            state.focused_list = tab::ListType::TYPES[state.focused_list_idx];
-            state.list_state.scroll_up_by(u16::MAX);
-            state.main_panel_title = state.focused_list.to_str();
-        }
+        event::KeyCode::Tab => ch_tab(state, true),
         _ => {}
     }
     false
+}
+
+fn ch_tab(state: &mut State, down: bool) {
+    let ch = if down { 1 } else { -1 };
+    let prev = state.focused_list_idx;
+    let len = tab::ListType::TYPES.len();
+    state.focused_list_idx = prev.checked_add_signed(ch as isize).unwrap_or(len - 1);
+    state.focused_list_idx %= len;
+    state.focused_list = tab::ListType::TYPES[state.focused_list_idx];
+    state.list_state.scroll_up_by(u16::MAX);
+    state.main_panel_title = state.focused_list.to_str();
 }
 
 fn handle_input(key: KeyEvent, state: &mut State) -> (Option<String>, bool) {
