@@ -1,5 +1,6 @@
 mod animation;
 mod log;
+mod tab;
 mod tag;
 mod theme;
 
@@ -17,9 +18,9 @@ use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyEvent},
     layout::{Constraint, Flex, Layout, Rect},
-    style::{Color, Style, Stylize},
+    style::Stylize,
     text::{Line, Span, ToSpan},
-    widgets::{Block, BorderType, Clear, List, ListState, Paragraph, Widget},
+    widgets::{Block, BorderType, Clear, ListState, Paragraph, Widget},
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -92,45 +93,6 @@ impl PersistentData {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-enum ListType {
-    #[default]
-    LOG,
-    TAG,
-    PASTLOG,
-}
-
-impl ListType {
-    pub const TYPES: [ListType; 3] = [ListType::LOG, ListType::TAG, ListType::PASTLOG];
-
-    fn to_span(&self) -> Line {
-        match self {
-            ListType::LOG => {
-                let icon = unicode_icon(0xf02c, Color::Blue);
-                let name = Span::raw("Logs");
-                Line::from(vec![icon, name])
-            }
-            ListType::PASTLOG => {
-                let icon = unicode_icon(0xf02c, Color::Blue);
-                let name = Span::raw("Past Logs");
-                Line::from(vec![icon, name])
-            }
-            ListType::TAG => {
-                let icon = unicode_icon(0xf02c, Color::Magenta);
-                let name = Span::raw("Tags");
-                Line::from(vec![icon, name])
-            }
-        }
-    }
-    fn to_str(&self) -> &'static str {
-        match self {
-            ListType::LOG => "| Logs |",
-            ListType::TAG => "| Tags |",
-            ListType::PASTLOG => "| Past Logs |",
-        }
-    }
-}
-
 struct State {
     data: PersistentData,
     list_state: ListState,
@@ -143,7 +105,7 @@ struct State {
     main_panel_title: &'static str,
     anims: RefCell<AnimationHandler>,
     focused_list_idx: usize,
-    focused_list: ListType,
+    focused_list: tab::ListType,
     dt: f64,
 }
 
@@ -162,6 +124,30 @@ impl State {
             Line::from(vec![Span::raw(self.input.clone())])
         };
     }
+}
+
+fn main() -> Result<()> {
+    let file_appender = tracing_appender::rolling::daily(
+        "/home/astro/projects/kairotui/logs",
+        "kairotui.log",
+    );
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(tracing::Level::TRACE)
+        .with_writer(non_blocking)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("setting default subscriber failed");
+
+    let mut state = init()?;
+
+    let terminal = ratatui::init();
+    let result = run(terminal, &mut state);
+
+    ratatui::restore();
+    result?;
+    Ok(())
 }
 
 fn render_popup(title: &str, msg: &Span, frame: &mut Frame) {
@@ -222,36 +208,6 @@ fn render_input_dialog(title: &str, def: &str, frame: &mut Frame, state: &mut St
         .render(area, frame.buffer_mut());
 }
 
-fn main() -> Result<()> {
-    let file_appender = tracing_appender::rolling::daily(
-        "/home/astro/projects/kairotui/",
-        "kairotui.log",
-    );
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(tracing::Level::TRACE)
-        .with_writer(non_blocking)
-        .finish();
-
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("setting default subscriber failed");
-
-    let mut state = init()?;
-
-    let terminal = ratatui::init();
-    let result = run(terminal, &mut state);
-
-    ratatui::restore();
-    result?;
-    Ok(())
-}
-
-fn unicode_icon<'a>(icon: u32, color: Color) -> Span<'a> {
-    let mut c = String::from(char::from_u32(icon).unwrap_or('X'));
-    c.push(' ');
-    Span::styled(c, color)
-}
-
 fn init() -> Result<State> {
     let mut state = State {
         data: PersistentData::default(),
@@ -263,7 +219,7 @@ fn init() -> Result<State> {
         anims: RefCell::new(AnimationHandler {
             animations: HashMap::new(),
         }),
-        focused_list: ListType::LOG,
+        focused_list: tab::ListType::LOG,
         focused_list_idx: 0,
         popup_active: false,
         popup_msg: Span::raw(""),
@@ -271,7 +227,7 @@ fn init() -> Result<State> {
         dt: 0.0,
     };
 
-    state.main_panel_title = ListType::LOG.to_str();
+    state.main_panel_title = tab::ListType::LOG.to_str();
     let mut data_path = config_dir().unwrap();
     data_path.push("kairotui");
     fs::create_dir_all(&data_path)?;
@@ -290,7 +246,7 @@ fn init() -> Result<State> {
 
 fn delegate_enter(state: &mut State) {
     match state.focused_list {
-        ListType::LOG => {
+        tab::ListType::LOG => {
             if let Some(i) = state.list_state.selected() {
                 let log = &mut state.data.logs[i];
                 log.done = true;
@@ -298,7 +254,7 @@ fn delegate_enter(state: &mut State) {
                 state.data.logs.remove(i);
             }
         }
-        ListType::TAG => {
+        tab::ListType::TAG => {
             state.input_dialog_active = true;
             state.input_default.0 = " Edit Tag ";
             state.input_default.1 = "<name>: <hex_color>";
@@ -317,17 +273,17 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
         event::KeyCode::Char(char) => match char {
             'q' => return true,
             'A' => {
-                if state.focused_list == ListType::LOG {
+                if state.focused_list == tab::ListType::LOG {
                     state.input_dialog_active = true;
                     state.input_default.0 = " New Log ";
                     state.input_default.1 = "<log_name> (tag: <tag_name>)*";
                 }
             }
             'D' => match state.focused_list {
-                ListType::LOG => {
+                tab::ListType::LOG => {
                     log::delete_selected(state);
                 }
-                ListType::PASTLOG => {
+                tab::ListType::PASTLOG => {
                     log::delete_past_log(state);
                 }
                 _ => {}
@@ -345,8 +301,8 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
         }
         event::KeyCode::Tab => {
             state.focused_list_idx += 1;
-            state.focused_list_idx %= ListType::TYPES.len();
-            state.focused_list = ListType::TYPES[state.focused_list_idx];
+            state.focused_list_idx %= tab::ListType::TYPES.len();
+            state.focused_list = tab::ListType::TYPES[state.focused_list_idx];
             state.list_state.scroll_up_by(u16::MAX);
             state.main_panel_title = state.focused_list.to_str();
         }
@@ -384,12 +340,12 @@ fn handle_event(state: &mut State) -> bool {
         }
         let res = handle_input(key, state);
         match state.focused_list {
-            ListType::LOG => {
+            tab::ListType::LOG => {
                 if let Some(str) = res.0 {
                     log::handle_add(state, str);
                 }
             }
-            ListType::TAG => {
+            tab::ListType::TAG => {
                 if let Some(str) = res.0 {
                     tag::handle_edit(state, str);
                 }
@@ -460,26 +416,6 @@ fn compute_main_layout(frame: &Frame, state: &mut State) -> (Rect, Rect) {
     (tab_area, todo_area)
 }
 
-fn render_tab_list(area: &Rect, state: &State, frame: &mut Frame) {
-    let tab_block = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .fg(theme::ORANG)
-        .bg(theme::BG0)
-        .title("| Tabs |".to_span().into_centered_line());
-
-    let tab_lines = ListType::TYPES.iter().map(|t| t.to_span());
-
-    let tab_list = List::new(tab_lines)
-        .block(tab_block)
-        .fg(theme::TEXT)
-        .bg(theme::BG0)
-        .highlight_style(Style::default().bg(theme::BG1));
-
-    let mut st = ListState::default().with_selected(Some(state.focused_list_idx));
-
-    frame.render_stateful_widget(tab_list, *area, &mut st);
-}
-
 fn render_main_screen(frame: &mut Frame, state: &mut State) {
     let (tab_area, log_a) = compute_main_layout(frame, state);
     let panel_txt = state.main_panel_title;
@@ -491,16 +427,16 @@ fn render_main_screen(frame: &mut Frame, state: &mut State) {
         .title(panel_txt.to_span().into_centered_line());
 
     match state.focused_list {
-        ListType::LOG => {
+        tab::ListType::LOG => {
             log::render_log_list(state, &outer, &log_a, frame, log::LogType::ACTIVE);
         }
-        ListType::PASTLOG => {
+        tab::ListType::PASTLOG => {
             log::render_log_list(state, &outer, &log_a, frame, log::LogType::PAST);
         }
-        ListType::TAG => render_tag_list(state, &outer, &log_a, frame),
+        tab::ListType::TAG => render_tag_list(state, &outer, &log_a, frame),
     }
 
-    render_tab_list(&tab_area, state, frame);
+    tab::render_tab_list(&tab_area, state, frame);
 }
 
 fn render_intro(frame: &mut Frame, state: &mut State) {
