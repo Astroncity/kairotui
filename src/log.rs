@@ -12,6 +12,7 @@ use std::{
     collections::HashSet,
     time::{Duration, Instant},
 };
+use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Log {
@@ -40,11 +41,16 @@ pub fn delete_selected(state: &mut State) {
     assert!(state.focused_list == ListType::LOG);
     if let Some(i) = state.list_state.selected() {
         state.data.logs.remove(i);
+        info!("{}", "Deleted active log");
     }
 }
 
 pub fn delete_past_log(state: &mut State) {
-    todo!()
+    assert!(state.focused_list == ListType::PASTLOG);
+    if let Some(i) = state.list_state.selected() {
+        state.data.past_logs.remove(i);
+        info!("{}", "Deleted old log");
+    }
 }
 
 fn parse_input(input: String) -> (String, Vec<String>) {
