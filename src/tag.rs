@@ -109,23 +109,21 @@ pub fn render_tag_list(
     area: &Rect,
     frame: &mut Frame,
 ) {
-    let list = List::new(state.data.tags.tags().into_iter().enumerate().map(
-        |(i, l)| {
-            let name = l.name();
-            let icon = theme::unicode_icon(0xf1224, Color::from_u32(*l.color()));
-            let ln = Line::from(vec![
-                icon,
-                Span::raw(name),
-                Span::styled(
-                    format!("{}{}", " ".repeat(20 - name.len()), l.refs),
-                    theme::BLUE,
-                ),
-            ]);
+    let list = List::new(state.data.tags.tags().into_iter().map(|l| {
+        let name = l.name();
+        let icon = theme::unicode_icon(0xf1224, Color::from_u32(*l.color()));
+        let ln = Line::from(vec![
+            icon,
+            Span::raw(name),
+            Span::styled(
+                format!("{}{}", " ".repeat(20 - name.len()), l.refs),
+                theme::BLUE,
+            ),
+        ]);
 
-            let color = if i % 2 == 0 { theme::BG0 } else { theme::BG1 };
-            ListItem::from(ln).bg(color)
-        },
-    ))
+        let color = theme::BG0;
+        ListItem::from(ln).bg(color)
+    }))
     .block(outer_block.clone())
     .fg(theme::TEXT)
     .bg(theme::BG0)

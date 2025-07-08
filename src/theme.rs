@@ -1,4 +1,7 @@
-use ratatui::{style::Color, text::Span};
+use ratatui::{
+    style::{Color, Style},
+    text::Span,
+};
 
 pub const TEXT: Color = Color::from_u32(0x00ebdbb2);
 pub const TEXT_ALT: Color = Color::from_u32(0x00a89984);
