@@ -62,10 +62,9 @@ fn parse_input(input: String) -> (String, Vec<String>) {
     let regex = Regex::new(r"(tag:\s(\w+))+").unwrap();
     let matches: Vec<&str> = regex.find_iter(&input).map(|m| m.as_str()).collect();
     let mut cpy = input.clone();
-    info!("tag matches: {}", matches.len());
 
     for m in &matches {
-        cpy = input.replace(m, "");
+        cpy = cpy.replace(m, "");
     }
 
     (
@@ -179,7 +178,7 @@ fn duration_as_hhmmss(dur: Duration) -> String {
 
 // TODO: Optimize
 pub fn update_logs(logs: &mut [Log]) {
-    for log in logs.iter_mut().filter(|l| !l.done) {
+    for log in logs.iter_mut() {
         log.end = Instant::now();
     }
 }
