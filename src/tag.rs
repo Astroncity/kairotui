@@ -9,6 +9,7 @@ use ratatui::{
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+use tachyonfx::ToRgbComponents;
 #[allow(unused_imports)]
 use tracing::{info, warn};
 
@@ -69,10 +70,18 @@ impl TagSys {
     }
 }
 
+fn rgb_to_hex(color: (u8, u8, u8)) -> u32 {
+    let (r, g, b) = color;
+    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+}
+
 pub fn handle_edit(state: &mut State, input: String) {
-    let check = Regex::new(r"^\w+:\s#\w{6}$").unwrap();
+    let color_regex: &str = &theme::TERM_COLORS_REGEX;
+    let full = format!(r"^\w+:\s((#\w{{6}})|{})", color_regex);
+    let check = Regex::new(&full).unwrap();
     if !check.is_match(&input) {
         warn!("Wrong format for tag edit");
+        info!("regex: {}", full);
         state.popup_msg = Span::styled("Bad Input", Color::Red);
         state.popup_active = true;
         return;
@@ -87,7 +96,12 @@ pub fn handle_edit(state: &mut State, input: String) {
 
     let (new_name, color_str_org) = input.split_once(":").unwrap();
     let color_str = color_str_org.replace(" #", "");
-    let color = u32::from_str_radix(&color_str, 16).unwrap();
+    let color = if color_str_org.contains("#") {
+        u32::from_str_radix(&color_str, 16).unwrap()
+    } else {
+        info!("color str: {}", color_str);
+        rgb_to_hex(theme::TERM_COLORS.get(&color_str.trim()).unwrap().to_rgb())
+    };
 
     let iter = state
         .data

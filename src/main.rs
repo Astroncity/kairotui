@@ -59,7 +59,7 @@ impl State {
 
             Line::from(vec![
                 Span::styled(self.input[..index].to_string(), theme::TEXT),
-                Span::styled(self.input[index..].to_string(), theme::ORANG),
+                Span::styled(self.input[index..].to_string(), theme::ORANGE),
             ])
         } else {
             Line::from(vec![Span::raw(self.input.clone())])
@@ -141,7 +141,7 @@ fn render_input_dialog(title: &str, def: &str, frame: &mut Frame, state: &mut St
         .block(
             Block::bordered()
                 .border_type(BorderType::Rounded)
-                .fg(theme::ORANG)
+                .fg(theme::ORANGE)
                 .title(title.to_span().into_centered_line()),
         )
         .left_aligned()
@@ -198,7 +198,8 @@ fn delegate_enter(state: &mut State) {
         tab::ListType::TAG => {
             state.input_dialog_active = true;
             state.input_default.0 = " Edit Tag ";
-            state.input_default.1 = "<name>: <hex_color>";
+            state.input_default.1 =
+                "<name>: <hex> (e.g. #FF00FF) or <color name> (e.g. Green)";
         }
         _ => {}
     }

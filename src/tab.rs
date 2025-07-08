@@ -50,7 +50,7 @@ impl ListType {
 pub fn render_tab_list(area: &Rect, state: &State, frame: &mut Frame) {
     let tab_block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .fg(theme::ORANG)
+        .fg(theme::ORANGE)
         .bg(theme::BG0)
         .title("| Tabs |".to_span().into_centered_line());
 
