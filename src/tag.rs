@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, List, ListItem},
+    widgets::{Block, List, ListItem, Paragraph, Widget},
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};

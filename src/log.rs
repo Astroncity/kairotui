@@ -1,10 +1,10 @@
 use crate::{State, tab::ListType, tag::TagSys, theme};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, ToSpan},
-    widgets::{Block, List, ListItem},
+    widgets::{Block, List, ListItem, Paragraph, Widget},
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -103,6 +103,30 @@ pub enum LogType {
     PAST,
 }
 
+fn render_empty_msg(frame: &mut Frame, block: &Block, outer: &Rect, old: bool) {
+    let msg = if old {
+        "No completed logs."
+    } else {
+        "No active logs.\n Start by creating a log with <S-A>."
+    };
+
+    let area = {
+        let vert = Layout::vertical([Constraint::Percentage(8)]).flex(Flex::Center);
+        let horz = Layout::horizontal([Constraint::Percentage(50)]).flex(Flex::Center);
+        let [area] = vert.areas(*outer);
+        let [area] = horz.areas(area);
+        area
+    };
+
+    block.render(*outer, frame.buffer_mut());
+
+    Paragraph::new(msg)
+        .fg(theme::TEXT_ALT)
+        .bg(theme::BG0)
+        .centered()
+        .render(area, frame.buffer_mut());
+}
+
 pub fn render_log_list(
     state: &mut State,
     outer_block: &Block,
@@ -110,11 +134,16 @@ pub fn render_log_list(
     frame: &mut Frame,
     t: LogType,
 ) {
-    let vec = if t == LogType::ACTIVE {
-        &state.data.logs
+    let (old, vec) = if t == LogType::ACTIVE {
+        (false, &state.data.logs)
     } else {
-        &state.data.past_logs
+        (true, &state.data.past_logs)
     };
+
+    if vec.len() == 0 {
+        render_empty_msg(frame, outer_block, area, old);
+        return;
+    }
 
     let list = List::new(vec.iter().map(|l| {
         let v = l.name.to_span().fg(theme::TEXT);
