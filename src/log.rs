@@ -40,6 +40,11 @@ impl Log {
 pub fn delete_selected(state: &mut State) {
     assert!(state.focused_list == ListType::LOG);
     if let Some(i) = state.list_state.selected() {
+        let log = &state.data.logs[i];
+        log.tags.iter().for_each(|t| {
+            state.data.tags.rm_ref(t);
+        });
+
         state.data.logs.remove(i);
         info!("{}", "Deleted active log");
     }

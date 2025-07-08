@@ -1,4 +1,4 @@
-use crate::{State, theme};
+use crate::{State, tag, theme};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -46,6 +46,22 @@ impl TagSys {
         };
         self.tags.push(t);
         self.tags.last_mut().unwrap()
+    }
+
+    pub fn rm_ref(self: &mut Self, tag_str: &str) -> bool {
+        let tag_idx = self
+            .tags
+            .iter_mut()
+            .position(|t| t.name == tag_str)
+            .unwrap();
+
+        let tag = self.tags.get_mut(tag_idx).unwrap();
+        tag.refs -= 1;
+        if tag.refs == 0 {
+            self.tags.remove(tag_idx);
+            return true;
+        }
+        false
     }
 
     pub fn tags(self: &Self) -> &Vec<Tag> {
