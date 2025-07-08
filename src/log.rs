@@ -54,9 +54,10 @@ pub fn delete_past_log(state: &mut State) {
 }
 
 fn parse_input(input: String) -> (String, Vec<String>) {
-    let regex = Regex::new(r"(tag:\s(\w+))+$").unwrap();
+    let regex = Regex::new(r"(tag:\s(\w+))+").unwrap();
     let matches: Vec<&str> = regex.find_iter(&input).map(|m| m.as_str()).collect();
     let mut cpy = input.clone();
+    info!("tag matches: {}", matches.len());
 
     for m in &matches {
         cpy = input.replace(m, "");
