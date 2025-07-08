@@ -116,7 +116,7 @@ pub fn render_log_list(
         &state.data.past_logs
     };
 
-    let list = List::new(vec.iter().enumerate().map(|(i, l)| {
+    let list = List::new(vec.iter().map(|l| {
         let v = l.name.to_span().fg(theme::TEXT);
         let mut dur_str = String::from(" ");
         dur_str.push_str(&duration_as_hhmmss(l.end.duration_since(l.start)));
@@ -128,12 +128,12 @@ pub fn render_log_list(
         vec.append(&mut tag_txt);
 
         let ln = Line::from(vec);
-        let color = if i % 2 == 0 { theme::BG0 } else { theme::BG1 };
+        let color = theme::BG0;
         ListItem::from(ln).bg(color)
     }))
     .block(outer_block.clone())
     .bg(theme::BG0)
-    .highlight_style(Style::default().fg(theme::ORANG))
+    .highlight_style(Style::default().bg(theme::BG1))
     .highlight_symbol("> ");
 
     frame.render_stateful_widget(list, *area, &mut state.list_state);

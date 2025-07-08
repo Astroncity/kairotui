@@ -1,4 +1,4 @@
-use crate::{State, tag, theme};
+use crate::{State, theme};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -129,7 +129,7 @@ pub fn render_tag_list(
     .block(outer_block.clone())
     .fg(theme::TEXT)
     .bg(theme::BG0)
-    .highlight_style(Style::default().fg(theme::ORANG))
+    .highlight_style(Style::default().bg(theme::BG1))
     .highlight_symbol("> ");
 
     frame.render_stateful_widget(list, *area, &mut state.list_state);
