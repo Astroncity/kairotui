@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, List, ListItem, Paragraph, Widget},
+    widgets::{Block, List, ListItem},
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -82,7 +82,7 @@ pub fn handle_edit(state: &mut State, input: String) {
     if !check.is_match(&input) {
         warn!("Wrong format for tag edit");
         info!("regex: {}", full);
-        state.popup_msg = Span::styled("Bad Input", Color::Red);
+        state.popup_msg = Span::styled("Bad Input", theme::RED);
         state.popup_active = true;
         return;
     }

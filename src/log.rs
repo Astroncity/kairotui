@@ -91,7 +91,7 @@ fn get_log_tag_text<'a>(log: &'a Log, sys: &'a TagSys) -> Vec<Span<'a>> {
         let str = String::from(" ") + t;
         let tag = sys.tags().iter().find(|e| e.name() == t).unwrap();
         let color = Color::from_u32(*tag.color());
-        spans.push(Span::styled(str, color));
+        spans.push(Span::styled(str, Style::default().fg(color).bold()));
     }
     spans
 }
@@ -149,7 +149,7 @@ pub fn render_log_list(
         let mut dur_str = String::from(" ");
         dur_str.push_str(&duration_as_hhmmss(l.end.duration_since(l.start)));
 
-        let dur = Span::styled(dur_str, Style::default().fg(Color::Cyan));
+        let dur = Span::styled(dur_str, Style::default().fg(theme::BLUE));
 
         let mut vec = vec![v, dur];
         let mut tag_txt = get_log_tag_text(l, &state.data.tags);

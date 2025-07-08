@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style, Stylize},
+    style::{Style, Stylize},
     text::{Line, Span, ToSpan},
     widgets::{Block, BorderType, List, ListState},
 };
@@ -22,17 +22,17 @@ impl ListType {
     fn to_span(&self) -> Line {
         match self {
             ListType::LOG => {
-                let icon = theme::unicode_icon(0xf02c, Color::Blue);
+                let icon = theme::unicode_icon(0xf02c, theme::BLUE);
                 let name = Span::raw("Logs");
                 Line::from(vec![icon, name])
             }
             ListType::PASTLOG => {
-                let icon = theme::unicode_icon(0xf02c, Color::Blue);
+                let icon = theme::unicode_icon(0xf02c, theme::AQUA);
                 let name = Span::raw("Past Logs");
                 Line::from(vec![icon, name])
             }
             ListType::TAG => {
-                let icon = theme::unicode_icon(0xf02c, Color::Magenta);
+                let icon = theme::unicode_icon(0xf02c, theme::RED);
                 let name = Span::raw("Tags");
                 Line::from(vec![icon, name])
             }
