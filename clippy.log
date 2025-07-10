@@ -1,0 +1,22 @@
+    Checking kairotui v0.1.0 (/home/astro/projects/kairotui)
+warning: methods with the following characteristics: (`to_*` and `self` type is `Copy`) usually take `self` by value
+  --> src/tab.rs:22:16
+   |
+22 |     fn to_span(&self) -> Line {
+   |                ^^^^^
+   |
+   = help: consider choosing a less ambiguous name
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#wrong_self_convention
+   = note: `#[warn(clippy::wrong_self_convention)]` on by default
+
+warning: methods with the following characteristics: (`to_*` and `self` type is `Copy`) usually take `self` by value
+  --> src/tab.rs:41:19
+   |
+41 |     pub fn to_str(&self) -> &'static str {
+   |                   ^^^^^
+   |
+   = help: consider choosing a less ambiguous name
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#wrong_self_convention
+
+warning: `kairotui` (bin "kairotui") generated 2 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.32s

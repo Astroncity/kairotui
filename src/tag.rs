@@ -21,10 +21,10 @@ pub struct Tag {
 }
 
 impl Tag {
-    pub fn color(self: &Self) -> &u32 {
+    pub fn color(&self) -> &u32 {
         &self.color
     }
-    pub fn name(self: &Self) -> &str {
+    pub fn name(&self) -> &str {
         &self.name
     }
 }
@@ -49,7 +49,7 @@ impl TagSys {
         self.tags.last_mut().unwrap()
     }
 
-    pub fn rm_ref(self: &mut Self, tag_str: &str) -> bool {
+    pub fn rm_ref(&mut self, tag_str: &str) -> bool {
         let tag_idx = self
             .tags
             .iter_mut()
@@ -65,7 +65,7 @@ impl TagSys {
         false
     }
 
-    pub fn tags(self: &Self) -> &Vec<Tag> {
+    pub fn tags(&self) -> &Vec<Tag> {
         &self.tags
     }
 }
@@ -77,7 +77,7 @@ fn rgb_to_hex(color: (u8, u8, u8)) -> u32 {
 
 pub fn handle_edit(state: &mut State, input: String) {
     let color_regex: &str = &theme::TERM_COLORS_REGEX;
-    let full = format!(r"^\w+:\s((#\w{{6}})|{})", color_regex);
+    let full = format!(r"^\w+:\s((#\w{{6}})|{color_regex})");
     let check = Regex::new(&full).unwrap();
     if !check.is_match(&input) {
         warn!("Wrong format for tag edit");
@@ -100,7 +100,7 @@ pub fn handle_edit(state: &mut State, input: String) {
         u32::from_str_radix(&color_str, 16).unwrap()
     } else {
         info!("color str: {}", color_str);
-        rgb_to_hex(theme::TERM_COLORS.get(&color_str.trim()).unwrap().to_rgb())
+        rgb_to_hex(theme::TERM_COLORS.get(color_str.trim()).unwrap().to_rgb())
     };
 
     let iter = state
@@ -123,7 +123,7 @@ pub fn render_tag_list(
     area: &Rect,
     frame: &mut Frame,
 ) {
-    let list = List::new(state.data.tags.tags().into_iter().map(|l| {
+    let list = List::new(state.data.tags.tags().iter().map(|l| {
         let name = l.name();
         let icon = theme::unicode_icon(0xf1224, Color::from_u32(*l.color()));
         let ln = Line::from(vec![

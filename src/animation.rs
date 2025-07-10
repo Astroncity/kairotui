@@ -12,6 +12,8 @@ use ratatui::{
 use crate::State;
 use tachyonfx::{Duration as FxDuration, Effect, Shader};
 
+pub type AnimationTrigger = Option<Box<dyn Fn(&State, &AnimationHandler) -> bool>>;
+
 macro_rules! add_anim_if_missing {
     ($state:expr, $key:expr, $effect:expr, $area:expr, $trigger:expr) => {
         if !$state.anims.borrow().animations.contains_key($key) {
@@ -39,7 +41,7 @@ pub struct Animation {
     pub effect: Effect,
     pub area: Rect,
     pub should_progress: bool,
-    trigger: Option<Box<dyn Fn(&State, &AnimationHandler) -> bool>>,
+    trigger: AnimationTrigger,
     last_trigger: bool,
 }
 
@@ -49,17 +51,17 @@ pub struct AnimationHandler {
 
 impl AnimationHandler {
     pub fn add(
-        self: &mut Self,
+        &mut self,
         name: &str,
         effect: Effect,
         area: Rect,
-        trigger: Option<Box<dyn Fn(&State, &AnimationHandler) -> bool>>,
+        trigger: AnimationTrigger,
     ) -> usize {
         let anim = Box::new(Animation {
-            effect: effect,
+            effect,
             area,
             should_progress: false,
-            trigger: trigger,
+            trigger,
             last_trigger: false,
         });
         self.animations.insert(name.to_string(), anim);
@@ -67,11 +69,11 @@ impl AnimationHandler {
         self.animations.len() - 1
     }
 
-    pub fn running(self: &Self) -> bool {
+    pub fn running(&self) -> bool {
         self.animations.values().any(|a| a.should_progress)
     }
 
-    pub fn progress(self: &mut Self, frame: &mut Frame, dt: f64, state: &State) {
+    pub fn progress(&mut self, frame: &mut Frame, dt: f64, state: &State) {
         let keys: Vec<(usize, String)> =
             self.animations.keys().cloned().enumerate().collect();
         let mut triggers: Vec<bool> = vec![false; self.animations.len()];

@@ -21,7 +21,7 @@ impl PersistentData {
         }
     }
 
-    pub fn save(self: &Self) -> Result<()> {
+    pub fn save(&self) -> Result<()> {
         let data = serde_json::to_string(self).unwrap();
         if let Some(path) = &self.save_path {
             fs::write(path, data)?;
@@ -31,7 +31,7 @@ impl PersistentData {
         Ok(())
     }
 
-    pub fn load(self: &Self) -> Result<PersistentData> {
+    pub fn load(&self) -> Result<PersistentData> {
         if let Some(path) = &self.save_path {
             let str: String = fs::read_to_string(path)?;
             let dat: PersistentData = serde_json::from_str(&str)?;

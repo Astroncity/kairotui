@@ -32,13 +32,13 @@ impl Log {
             end: Instant::now(),
             done: false,
             name: desc,
-            tags: tags,
+            tags,
         }
     }
 }
 
 pub fn delete_selected(state: &mut State) {
-    assert!(state.focused_list == ListType::LOG);
+    assert!(state.focused_list == ListType::Log);
     if let Some(i) = state.list_state.selected() {
         let log = &state.data.logs[i];
         log.tags.iter().for_each(|t| {
@@ -51,7 +51,7 @@ pub fn delete_selected(state: &mut State) {
 }
 
 pub fn delete_past_log(state: &mut State) {
-    assert!(state.focused_list == ListType::PASTLOG);
+    assert!(state.focused_list == ListType::PastLog);
     if let Some(i) = state.list_state.selected() {
         state.data.past_logs.remove(i);
         info!("{}", "Deleted old log");
@@ -98,8 +98,8 @@ fn get_log_tag_text<'a>(log: &'a Log, sys: &'a TagSys) -> Vec<Span<'a>> {
 
 #[derive(PartialEq, PartialOrd, Eq)]
 pub enum LogType {
-    ACTIVE,
-    PAST,
+    Active,
+    Past,
 }
 
 fn render_empty_msg(frame: &mut Frame, block: &Block, outer: &Rect, old: bool) {
@@ -133,13 +133,13 @@ pub fn render_log_list(
     frame: &mut Frame,
     t: LogType,
 ) {
-    let (old, vec) = if t == LogType::ACTIVE {
+    let (old, vec) = if t == LogType::Active {
         (false, &state.data.logs)
     } else {
         (true, &state.data.past_logs)
     };
 
-    if vec.len() == 0 {
+    if vec.is_empty() {
         render_empty_msg(frame, outer_block, area, old);
         return;
     }
@@ -173,7 +173,7 @@ fn duration_as_hhmmss(dur: Duration) -> String {
     let minutes = (total_seconds % 3600) / 60;
     let seconds = total_seconds % 60;
 
-    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
 }
 
 // TODO: Optimize

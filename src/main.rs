@@ -31,7 +31,6 @@ use tachyonfx::{
     Duration as FxDuration, Shader,
     fx::{self},
 };
-use tracing_appender;
 use tracing_subscriber::FmtSubscriber;
 
 struct State {
@@ -118,7 +117,7 @@ fn render_input_dialog(title: &str, def: &str, frame: &mut Frame, state: &mut St
     } else {
         let mut s = state.input_display.clone();
         let l: &mut Span = s.spans.iter_mut().last().unwrap();
-        *l = Span::styled(format!("{}█", l.content.clone().to_string()), l.style);
+        *l = Span::styled(format!("{}█", l.content.clone()), l.style);
         s
     };
 
@@ -160,7 +159,7 @@ fn init() -> Result<State> {
         anims: RefCell::new(AnimationHandler {
             animations: HashMap::new(),
         }),
-        focused_list: tab::ListType::LOG,
+        focused_list: tab::ListType::Log,
         focused_list_idx: 0,
         popup_active: false,
         popup_msg: Span::raw(""),
@@ -168,7 +167,7 @@ fn init() -> Result<State> {
         dt: 0.0,
     };
 
-    state.main_panel_title = tab::ListType::LOG.to_str();
+    state.main_panel_title = tab::ListType::Log.to_str();
     let mut data_path = config_dir().unwrap();
     data_path.push("kairotui");
     fs::create_dir_all(&data_path)?;
@@ -187,7 +186,7 @@ fn init() -> Result<State> {
 
 fn delegate_enter(state: &mut State) {
     match state.focused_list {
-        tab::ListType::LOG => {
+        tab::ListType::Log => {
             if let Some(i) = state.list_state.selected() {
                 let log = &mut state.data.logs[i];
                 log.done = true;
@@ -195,7 +194,7 @@ fn delegate_enter(state: &mut State) {
                 state.data.logs.remove(i);
             }
         }
-        tab::ListType::TAG => {
+        tab::ListType::Tag => {
             state.input_dialog_active = true;
             state.input_default.0 = " Edit Tag ";
             state.input_default.1 =
@@ -215,17 +214,17 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
         event::KeyCode::Char(char) => match char {
             'q' => return true,
             'A' => {
-                if state.focused_list == tab::ListType::LOG {
+                if state.focused_list == tab::ListType::Log {
                     state.input_dialog_active = true;
                     state.input_default.0 = " New Log ";
                     state.input_default.1 = "<log_name> (tag: <tag_name>)*";
                 }
             }
             'D' => match state.focused_list {
-                tab::ListType::LOG => {
+                tab::ListType::Log => {
                     log::delete_selected(state);
                 }
-                tab::ListType::PASTLOG => {
+                tab::ListType::PastLog => {
                     log::delete_past_log(state);
                 }
                 _ => {}
@@ -289,12 +288,12 @@ fn handle_event(state: &mut State) -> bool {
         }
         let res = handle_input(key, state);
         match state.focused_list {
-            tab::ListType::LOG => {
+            tab::ListType::Log => {
                 if let Some(str) = res.0 {
                     log::handle_add(state, str);
                 }
             }
-            tab::ListType::TAG => {
+            tab::ListType::Tag => {
                 if let Some(str) = res.0 {
                     tag::handle_edit(state, str);
                 }
@@ -376,13 +375,13 @@ fn render_main_screen(frame: &mut Frame, state: &mut State) {
         .title(panel_txt.to_span().into_centered_line());
 
     match state.focused_list {
-        tab::ListType::LOG => {
-            log::render_log_list(state, &outer, &log_a, frame, log::LogType::ACTIVE);
+        tab::ListType::Log => {
+            log::render_log_list(state, &outer, &log_a, frame, log::LogType::Active);
         }
-        tab::ListType::PASTLOG => {
-            log::render_log_list(state, &outer, &log_a, frame, log::LogType::PAST);
+        tab::ListType::PastLog => {
+            log::render_log_list(state, &outer, &log_a, frame, log::LogType::Past);
         }
-        tab::ListType::TAG => render_tag_list(state, &outer, &log_a, frame),
+        tab::ListType::Tag => render_tag_list(state, &outer, &log_a, frame),
     }
 
     tab::render_tab_list(&tab_area, state, frame);

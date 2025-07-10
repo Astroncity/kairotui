@@ -11,38 +11,38 @@ use crate::{State, theme};
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ListType {
     #[default]
-    LOG,
-    TAG,
-    PASTLOG,
+    Log,
+    Tag,
+    PastLog,
 }
 
-impl ListType {
-    pub const TYPES: [ListType; 3] = [ListType::LOG, ListType::TAG, ListType::PASTLOG];
+impl<'a> ListType {
+    pub const TYPES: [ListType; 3] = [ListType::Log, ListType::Tag, ListType::PastLog];
 
-    fn to_span(&self) -> Line {
+    fn to_span(self) -> Line<'a> {
         match self {
-            ListType::LOG => {
+            ListType::Log => {
                 let icon = theme::unicode_icon(0xf02c, theme::BLUE);
                 let name = Span::raw("Logs");
                 Line::from(vec![icon, name])
             }
-            ListType::PASTLOG => {
+            ListType::PastLog => {
                 let icon = theme::unicode_icon(0xf02c, theme::AQUA);
                 let name = Span::raw("Past Logs");
                 Line::from(vec![icon, name])
             }
-            ListType::TAG => {
+            ListType::Tag => {
                 let icon = theme::unicode_icon(0xf02c, theme::RED);
                 let name = Span::raw("Tags");
                 Line::from(vec![icon, name])
             }
         }
     }
-    pub fn to_str(&self) -> &'static str {
+    pub fn to_str(self) -> &'a str {
         match self {
-            ListType::LOG => "| Logs |",
-            ListType::TAG => "| Tags |",
-            ListType::PASTLOG => "| Past Logs |",
+            ListType::Log => "| Logs |",
+            ListType::Tag => "| Tags |",
+            ListType::PastLog => "| Past Logs |",
         }
     }
 }
