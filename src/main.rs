@@ -10,7 +10,7 @@ use animation::{AnimationHandler, add_anim_if_missing, after_anim};
 #[allow(unused_imports)]
 use tracing::{info, warn};
 
-use crate::{data::PersistentData, tag::*};
+use crate::{data::PersistentData, log::LogList, tab::Tab, tag::*};
 use anyhow::{Ok, Result};
 use dirs::config_dir;
 use ratatui::{
@@ -22,7 +22,7 @@ use ratatui::{
     widgets::{Block, BorderType, Clear, ListState, Paragraph, Widget},
 };
 use regex::Regex;
-use std::{cell::RefCell, fs};
+use std::{cell::RefCell, fs, rc::Rc};
 use std::{
     collections::HashMap,
     time::{Duration, Instant},
@@ -46,6 +46,7 @@ struct State {
     anims: RefCell<AnimationHandler>,
     focused_list_idx: usize,
     focused_list: tab::ListType,
+    rendered_lists: Vec<Box<dyn Tab>>,
     dt: f64,
 }
 
@@ -164,6 +165,7 @@ fn init() -> Result<State> {
         popup_active: false,
         popup_msg: Span::raw(""),
         input_default: ("", ""),
+        rendered_lists: vec![],
         dt: 0.0,
     };
 
@@ -181,6 +183,10 @@ fn init() -> Result<State> {
     } else {
         state.data = PersistentData::new(data_path.to_str().unwrap().to_owned());
     }
+
+    state
+        .rendered_lists
+        .push(Box::new(LogList::new("Logs", &state.data.logs)));
     Ok(state)
 }
 
@@ -375,14 +381,18 @@ fn render_main_screen(frame: &mut Frame, state: &mut State) {
         .title(panel_txt.to_span().into_centered_line());
 
     match state.focused_list {
-        tab::ListType::Log => {
-            log::render_log_list(state, &outer, &log_a, frame, log::LogType::Active);
-        }
+        // tab::ListType::Log => {
+        //     log::render_log_list(state, &outer, &log_a, frame, log::LogType::Active);
+        // }
         tab::ListType::PastLog => {
             log::render_log_list(state, &outer, &log_a, frame, log::LogType::Past);
         }
         tab::ListType::Tag => render_tag_list(state, &outer, &log_a, frame),
+        _ => {}
     }
+
+    // WARN:
+    state.rendered_lists[0].render(Rc::new(RefCell::new(state)), &outer, &log_a, frame);
 
     tab::render_tab_list(&tab_area, state, frame);
 }

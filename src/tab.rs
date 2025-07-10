@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use ratatui::{
     Frame,
     layout::Rect,
@@ -14,6 +16,18 @@ pub enum ListType {
     Log,
     Tag,
     PastLog,
+}
+
+pub trait Tab {
+    fn render(
+        self: &Self,
+        state: Rc<RefCell<State>>,
+        block: &Block,
+        area: &Rect,
+        frame: &mut Frame,
+    );
+    fn get_title(self: &Self) -> &str;
+    fn get_line(self: &Self) -> Line<'static>;
 }
 
 impl<'a> ListType {

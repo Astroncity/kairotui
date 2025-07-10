@@ -1,4 +1,9 @@
-use crate::{State, tab::ListType, tag::TagSys, theme};
+use crate::{
+    State,
+    tab::{ListType, Tab},
+    tag::TagSys,
+    theme,
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Flex, Layout, Rect},
@@ -9,7 +14,9 @@ use ratatui::{
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
+    cell::RefCell,
     collections::HashSet,
+    rc::Rc,
     time::{Duration, Instant},
 };
 use tracing::info;
@@ -23,6 +30,68 @@ pub struct Log {
     #[serde(with = "serde_millis")]
     pub end: Instant,
     pub tags: HashSet<String>,
+}
+
+pub struct LogList {
+    logs: &'static Vec<Log>,
+    title: String,
+}
+
+impl LogList {
+    pub fn new(title: &str, vec: &'static Vec<Log>) -> Self {
+        let t = format!("| {} |", title);
+        Self {
+            logs: vec,
+            title: t,
+        }
+    }
+}
+
+impl Tab for LogList {
+    fn render(
+        self: &Self,
+        state: Rc<RefCell<State>>,
+        blk: &Block,
+        area: &Rect,
+        frame: &mut Frame,
+    ) {
+        if self.logs.is_empty() {
+            render_empty_msg(frame, blk, area, false);
+            return;
+        }
+
+        let list = List::new(self.logs.iter().map(|l| {
+            let v = l.name.to_span().fg(theme::TEXT);
+            let mut dur_str = String::from(" ");
+            dur_str.push_str(&duration_as_hhmmss(l.end.duration_since(l.start)));
+
+            let dur = Span::styled(dur_str, Style::default().fg(theme::BLUE));
+
+            let mut vec = vec![v, dur];
+            let mut tag_txt = get_log_tag_text(l, &state.borrow().data.tags);
+            vec.append(&mut tag_txt);
+
+            let ln = Line::from(vec);
+            let color = theme::BG0;
+            ListItem::from(ln).bg(color)
+        }))
+        .block(blk.clone())
+        .bg(theme::BG0)
+        .highlight_style(Style::default().bg(theme::BG1))
+        .highlight_symbol("> ");
+
+        frame.render_stateful_widget(list, *area, &mut state.borrow_mut().list_state);
+    }
+
+    fn get_title<'a>(self: &'a Self) -> &'a str {
+        &self.title
+    }
+
+    fn get_line(self: &Self) -> Line<'static> {
+        let icon = theme::unicode_icon(0xf02c, theme::BLUE);
+        let name = Span::raw("Logs");
+        Line::from(vec![icon, name])
+    }
 }
 
 impl Log {
