@@ -36,7 +36,6 @@ macro_rules! after_anim {
 pub(crate) use add_anim_if_missing;
 pub(crate) use after_anim;
 
-#[derive()]
 pub struct Animation {
     pub effect: Effect,
     pub area: Rect,

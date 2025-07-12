@@ -184,10 +184,18 @@ fn init() -> Result<State> {
         state.data = PersistentData::new(data_path.to_str().unwrap().to_owned());
     }
 
-    state
-        .rendered_lists
-        .push(Box::new(LogList::new("Logs", &state.data.logs)));
-    Ok(state)
+    // Use Rc<RefCell<State>> separately and clone it into LogList
+    let state_rc = Rc::new(RefCell::new(state));
+
+    // Push a reference-cloned version into rendered_lists
+    let log_list = Box::new(LogList::new("Logs", state_rc.clone()));
+
+    // Now mutate the actual state to insert the list
+    state_rc.borrow_mut().rendered_lists.push(log_list);
+
+    Rc::try_unwrap(state_rc)
+        .map(|rc| rc.into_inner())
+        .map_err(|_| anyhow::anyhow!("Failed to unwrap Rc — multiple references exist")) // Return the Rc unwrapped (if needed) or keep it Rc throughout
 }
 
 fn delegate_enter(state: &mut State) {
@@ -392,7 +400,7 @@ fn render_main_screen(frame: &mut Frame, state: &mut State) {
     }
 
     // WARN:
-    state.rendered_lists[0].render(Rc::new(RefCell::new(state)), &outer, &log_a, frame);
+    state.rendered_lists[0].render(&outer, &log_a, frame);
 
     tab::render_tab_list(&tab_area, state, frame);
 }

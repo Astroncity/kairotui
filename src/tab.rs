@@ -19,13 +19,7 @@ pub enum ListType {
 }
 
 pub trait Tab {
-    fn render(
-        self: &Self,
-        state: Rc<RefCell<State>>,
-        block: &Block,
-        area: &Rect,
-        frame: &mut Frame,
-    );
+    fn render(self: &Self, block: &Block, area: &Rect, frame: &mut Frame);
     fn get_title(self: &Self) -> &str;
     fn get_line(self: &Self) -> Line<'static>;
 }

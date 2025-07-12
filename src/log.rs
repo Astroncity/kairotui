@@ -33,54 +33,62 @@ pub struct Log {
 }
 
 pub struct LogList {
-    logs: &'static Vec<Log>,
+    state: Rc<RefCell<State>>,
     title: String,
 }
 
 impl LogList {
-    pub fn new(title: &str, vec: &'static Vec<Log>) -> Self {
+    pub fn new(title: &str, state: Rc<RefCell<State>>) -> Self {
         let t = format!("| {} |", title);
         Self {
-            logs: vec,
+            state: state,
             title: t,
         }
     }
 }
 
 impl Tab for LogList {
-    fn render(
-        self: &Self,
-        state: Rc<RefCell<State>>,
-        blk: &Block,
-        area: &Rect,
-        frame: &mut Frame,
-    ) {
-        if self.logs.is_empty() {
-            render_empty_msg(frame, blk, area, false);
-            return;
+    fn render(self: &Self, blk: &Block, area: &Rect, frame: &mut Frame) {
+        {
+            let s = self.state.borrow_mut();
+            let logs = &s.data.logs;
+            if logs.is_empty() {
+                render_empty_msg(frame, blk, area, false);
+                return;
+            }
         }
 
-        let list = List::new(self.logs.iter().map(|l| {
-            let v = l.name.to_span().fg(theme::TEXT);
-            let mut dur_str = String::from(" ");
-            dur_str.push_str(&duration_as_hhmmss(l.end.duration_since(l.start)));
+        let state = self.state.borrow();
+        let logs = &state.data.logs;
+        let tags = &state.data.tags;
 
-            let dur = Span::styled(dur_str, Style::default().fg(theme::BLUE));
+        let list = {
+            List::new(logs.iter().map(|l| {
+                let v = l.name.to_span().fg(theme::TEXT);
+                let mut dur_str = String::from(" ");
+                dur_str.push_str(&duration_as_hhmmss(l.end.duration_since(l.start)));
 
-            let mut vec = vec![v, dur];
-            let mut tag_txt = get_log_tag_text(l, &state.borrow().data.tags);
-            vec.append(&mut tag_txt);
+                let dur = Span::styled(dur_str, Style::default().fg(theme::BLUE));
 
-            let ln = Line::from(vec);
-            let color = theme::BG0;
-            ListItem::from(ln).bg(color)
-        }))
-        .block(blk.clone())
-        .bg(theme::BG0)
-        .highlight_style(Style::default().bg(theme::BG1))
-        .highlight_symbol("> ");
+                let mut vec = vec![v, dur];
+                let mut tag_txt = get_log_tag_text(l, tags);
+                vec.append(&mut tag_txt);
 
-        frame.render_stateful_widget(list, *area, &mut state.borrow_mut().list_state);
+                let ln = Line::from(vec);
+                let color = theme::BG0;
+                ListItem::from(ln).bg(color)
+            }))
+            .block(blk.clone())
+            .bg(theme::BG0)
+            .highlight_style(Style::default().bg(theme::BG1))
+            .highlight_symbol("> ")
+        };
+
+        frame.render_stateful_widget(
+            list,
+            *area,
+            &mut self.state.borrow_mut().list_state,
+        );
     }
 
     fn get_title<'a>(self: &'a Self) -> &'a str {
@@ -159,7 +167,7 @@ fn get_log_tag_text<'a>(log: &'a Log, sys: &'a TagSys) -> Vec<Span<'a>> {
     for t in &log.tags {
         let str = String::from(" ") + t;
         let tag = sys.tags().iter().find(|e| e.name() == t).unwrap();
-        let color = Color::from_u32(*tag.color());
+        let color = Color::from_u32(tag.color().clone());
         spans.push(Span::styled(str, Style::default().fg(color).bold()));
     }
     spans

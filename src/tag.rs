@@ -13,7 +13,7 @@ use tachyonfx::ToRgbComponents;
 #[allow(unused_imports)]
 use tracing::{info, warn};
 
-#[derive(Default, Serialize, Deserialize, Debug)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct Tag {
     name: String,
     color: u32,
