@@ -10,7 +10,7 @@ use animation::{AnimationHandler, add_anim_if_missing, after_anim};
 #[allow(unused_imports)]
 use tracing::{info, warn};
 
-use crate::{data::PersistentData, log::LogList, tab::Tab, tag::*};
+use crate::{data::SaveData, log::LogList, tab::Tab, tag::*};
 use anyhow::{Ok, Result};
 use dirs::config_dir;
 use ratatui::{
@@ -22,7 +22,7 @@ use ratatui::{
     widgets::{Block, BorderType, Clear, ListState, Paragraph, Widget},
 };
 use regex::Regex;
-use std::{cell::RefCell, fs, rc::Rc};
+use std::{cell::RefCell, fs};
 use std::{
     collections::HashMap,
     time::{Duration, Instant},
@@ -34,7 +34,6 @@ use tachyonfx::{
 use tracing_subscriber::FmtSubscriber;
 
 struct State {
-    data: PersistentData,
     list_state: ListState,
     input_dialog_active: bool,
     popup_active: bool,
@@ -48,6 +47,7 @@ struct State {
     focused_list: tab::ListType,
     rendered_lists: Vec<Box<dyn Tab>>,
     dt: f64,
+    opened_once: bool,
 }
 
 impl State {
@@ -81,10 +81,10 @@ fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)
         .expect("setting default subscriber failed");
 
-    let mut state = init()?;
+    let (mut state, mut data) = init()?;
 
     let terminal = ratatui::init();
-    let result = run(terminal, &mut state);
+    let result = run(terminal, &mut state, &mut data);
 
     ratatui::restore();
     result?;
@@ -149,11 +149,11 @@ fn render_input_dialog(title: &str, def: &str, frame: &mut Frame, state: &mut St
         .render(area, frame.buffer_mut());
 }
 
-fn init() -> Result<State> {
+fn init() -> Result<(State, SaveData)> {
     let mut state = State {
-        data: PersistentData::default(),
         list_state: ListState::default(),
         input: String::from(""),
+        opened_once: false,
         input_dialog_active: false,
         input_display: Line::default(),
         main_panel_title: "",
@@ -169,43 +169,32 @@ fn init() -> Result<State> {
         dt: 0.0,
     };
 
+    let _ = color_eyre::install();
+
     state.main_panel_title = tab::ListType::Log.to_str();
     let mut data_path = config_dir().unwrap();
     data_path.push("kairotui");
     fs::create_dir_all(&data_path)?;
     data_path.push("save.dat");
-    state.data.save_path = Some(data_path.to_str().unwrap().to_string());
 
-    let _ = color_eyre::install();
-
+    let mut data = SaveData::new(data_path.to_str().unwrap().to_string());
     if fs::exists(&data_path)? {
-        state.data = state.data.load()?;
-    } else {
-        state.data = PersistentData::new(data_path.to_str().unwrap().to_owned());
+        data = data.load()?;
     }
 
-    // Use Rc<RefCell<State>> separately and clone it into LogList
-    let state_rc = Rc::new(RefCell::new(state));
-
-    // Push a reference-cloned version into rendered_lists
-    let log_list = Box::new(LogList::new("Logs", state_rc.clone()));
-
-    // Now mutate the actual state to insert the list
-    state_rc.borrow_mut().rendered_lists.push(log_list);
-
-    Rc::try_unwrap(state_rc)
-        .map(|rc| rc.into_inner())
-        .map_err(|_| anyhow::anyhow!("Failed to unwrap Rc — multiple references exist")) // Return the Rc unwrapped (if needed) or keep it Rc throughout
+    let log_list = Box::new(LogList::new("Logs"));
+    state.rendered_lists.push(log_list);
+    Ok((state, data))
 }
 
-fn delegate_enter(state: &mut State) {
+fn delegate_enter(state: &mut State, data: &mut SaveData) {
     match state.focused_list {
         tab::ListType::Log => {
             if let Some(i) = state.list_state.selected() {
-                let log = &mut state.data.logs[i];
+                let log = &mut data.logs[i];
                 log.done = true;
-                state.data.past_logs.push(log.clone());
-                state.data.logs.remove(i);
+                data.past_logs.push(log.clone());
+                data.logs.remove(i);
             }
         }
         tab::ListType::Tag => {
@@ -218,7 +207,7 @@ fn delegate_enter(state: &mut State) {
     }
 }
 
-fn handle_key(key: KeyEvent, state: &mut State) -> bool {
+fn handle_key(key: KeyEvent, state: &mut State, data: &mut SaveData) -> bool {
     if state.popup_active {
         state.popup_active = false;
         return false;
@@ -254,7 +243,7 @@ fn handle_key(key: KeyEvent, state: &mut State) -> bool {
             _ => {}
         },
         event::KeyCode::Enter => {
-            delegate_enter(state);
+            delegate_enter(state, data);
         }
         event::KeyCode::Tab => ch_tab(state, true),
         _ => {}
@@ -294,11 +283,11 @@ fn handle_input(key: KeyEvent, state: &mut State) -> (Option<String>, bool) {
     (None, false)
 }
 
-fn handle_event(state: &mut State) -> bool {
-    let _ = state.data.save();
+fn handle_event(state: &mut State, data: &mut SaveData) -> bool {
+    let _ = data.save();
     if let Event::Key(key) = event::read().unwrap() {
         if !state.input_dialog_active {
-            return handle_key(key, state);
+            return handle_key(key, state, data);
         }
         let res = handle_input(key, state);
         match state.focused_list {
@@ -319,7 +308,11 @@ fn handle_event(state: &mut State) -> bool {
     false
 }
 
-fn run(mut terminal: DefaultTerminal, state: &mut State) -> Result<()> {
+fn run(
+    mut terminal: DefaultTerminal,
+    state: &mut State,
+    data: &mut SaveData,
+) -> Result<()> {
     let mut last_frame = std::time::Instant::now();
 
     loop {
@@ -327,7 +320,7 @@ fn run(mut terminal: DefaultTerminal, state: &mut State) -> Result<()> {
         state.dt = now.duration_since(last_frame).as_secs_f64();
         last_frame = now;
 
-        log::update_logs(&mut state.data.logs);
+        log::update_logs(&mut data.logs);
         terminal.draw(|x| render(x, state))?;
 
         let timeout = if state.anims.borrow().running() {
@@ -337,7 +330,7 @@ fn run(mut terminal: DefaultTerminal, state: &mut State) -> Result<()> {
         };
 
         if event::poll(timeout)? {
-            if handle_event(state) {
+            if handle_event(state, data) {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(1));
@@ -353,7 +346,7 @@ fn handle_main_layout_anims(areas: &[Rect; 2], state: &mut State) {
         "main_area",
         fx::coalesce(FxDuration::from_millis(500)),
         areas[0],
-        |s, a| s.data.opened_once || after_anim!(a, "intro_end")
+        |s, a| s.opened_once || after_anim!(a, "intro_end")
     );
     add_anim_if_missing!(
         state,
@@ -364,8 +357,7 @@ fn handle_main_layout_anims(areas: &[Rect; 2], state: &mut State) {
     );
 }
 
-fn compute_main_layout(frame: &Frame, state: &mut State) -> (Rect, Rect) {
-    state.data.opened_once = true;
+fn compute_main_layout(frame: &Frame, st: &mut State) -> (Rect, Rect) {
     let [tabs_and_main] = Layout::vertical([Constraint::Fill(1)])
         .margin(1)
         .areas(frame.area());
@@ -374,7 +366,7 @@ fn compute_main_layout(frame: &Frame, state: &mut State) -> (Rect, Rect) {
             .areas(tabs_and_main);
     let [todo_area] = Layout::vertical([Constraint::Fill(1)]).areas(main_area);
 
-    handle_main_layout_anims(&[todo_area, tab_area], state);
+    handle_main_layout_anims(&[todo_area, tab_area], st);
     (tab_area, todo_area)
 }
 
@@ -406,7 +398,7 @@ fn render_main_screen(frame: &mut Frame, state: &mut State) {
 }
 
 fn render(frame: &mut Frame, state: &mut State) {
-    if state.data.opened_once
+    if state.opened_once
         || state.anims.borrow().animations.contains_key("intro_end")
             && state.anims.borrow().animations["intro_end"].effect.done()
     {

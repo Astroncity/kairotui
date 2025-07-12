@@ -2,13 +2,18 @@ use std::{cell::RefCell, rc::Rc};
 
 use ratatui::{
     Frame,
+    crossterm::event::KeyCode,
     layout::Rect,
     style::{Style, Stylize},
     text::{Line, Span, ToSpan},
     widgets::{Block, BorderType, List, ListState},
 };
 
-use crate::{State, theme};
+use crate::{
+    State,
+    data::{self, SaveData},
+    theme,
+};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ListType {
@@ -19,9 +24,16 @@ pub enum ListType {
 }
 
 pub trait Tab {
-    fn render(self: &Self, block: &Block, area: &Rect, frame: &mut Frame);
+    fn render(
+        self: &mut Self,
+        block: &Block,
+        area: &Rect,
+        frame: &mut Frame,
+        data: &mut SaveData,
+    );
     fn get_title(self: &Self) -> &str;
     fn get_line(self: &Self) -> Line<'static>;
+    fn handle_keys(self: &mut Self, key: KeyCode, data: &mut SaveData);
 }
 
 impl<'a> ListType {
